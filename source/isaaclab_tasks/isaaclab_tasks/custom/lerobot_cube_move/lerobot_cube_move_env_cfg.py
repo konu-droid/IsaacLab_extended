@@ -34,7 +34,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
         render_interval=decimation,
         physx=PhysxCfg(
             # The error message suggested a size of at least 297529608
-            gpu_collision_stack_size=300000000  # Give it a bit of a buffer
+            gpu_collision_stack_size=500000000  # Give it a bit of a buffer
         )
     )
     
@@ -56,7 +56,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     )
     
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=2, env_spacing=4.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -138,6 +138,5 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     contact_reward_scale = 10.0
     lift_reward_scale: float = 2.0    
     approach_angle_reward_scale: float = 1.0
-    drive_command_reward_scale: float = 1.0
     
     success_bonus: float = 10.0

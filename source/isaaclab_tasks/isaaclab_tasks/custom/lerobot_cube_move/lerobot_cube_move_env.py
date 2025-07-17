@@ -88,8 +88,8 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
         # we need to explicitly filter collisions for CPU simulation
-        if self.device == "cpu":
-            self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
+        # if self.device == "cpu":
+        #     self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
 
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -139,7 +139,7 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         # Get the gripper's current joint position
         gripper_pos = self.robot.data.joint_pos[:, self.gripper_dof_idx[0]]
         # Normalize it to a [0, 1] range where 1 is closed
-        self.normalized_gripper_pos[:] = (gripper_pos - self.gripper_lower_limit) / (self.gripper_upper_limit - self.gripper_lower_limit)
+        self.normalized_gripper_pos[:] = (self.gripper_upper_limit - gripper_pos) / (self.gripper_upper_limit - self.gripper_lower_limit)
 
 
         obs = torch.cat(
@@ -159,7 +159,7 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         left_finger_force = torch.norm(self.contact_left_finger.data.net_forces_w, dim=-1)
         right_finger_force = torch.norm(self.contact_right_finger.data.net_forces_w, dim=-1)
         
-        total_reward = self.compute_rewards(
+        total_reward, wandb_log = compute_rewards(
             self.actions,
             self.buckle_ftom_pose,
             self.robot_grasp_pos,
@@ -174,8 +174,10 @@ class LerobotCubeMoveEnv(DirectRLEnv):
             self.cfg.success_bonus,
             self.cfg.action_penalty_scale,
             self.cfg.approach_angle_reward_scale,
-            self.cfg.drive_command_reward_scale,
         )
+        
+        wandb.log(wandb_log, step=self.common_step_counter)
+        
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -230,158 +232,137 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         buckle_male_new_state[:, :3] += self.scene.env_origins[env_ids]
         self.male_buckle.write_root_state_to_sim(buckle_male_new_state, env_ids)
 
-    def compute_rewards(
-        self,
-        # Core state
-        actions: torch.Tensor,
-        buckle_ftom_pose: torch.Tensor,
-        # Gripper and Male Buckle states
-        robot_grasp_pos: torch.Tensor,
-        male_buckle_pos: torch.Tensor,
-        male_buckle_z_pos: torch.Tensor,
-        normalized_gripper_pos: torch.Tensor,
-        gripper_joint_angle: torch.Tensor,
-        # Reward scales from config
-        reach_reward_scale: float,
-        grasp_reward_scale: float,
-        lift_reward_scale: float,
-        mate_reward_scale: float,
-        success_bonus: float,
-        action_penalty_scale: float,
-        approach_angle_reward_scale: float,
-        drive_command_reward_scale: float,
-    ):
-        """
-        Computes rewards using a staged approach for the buckle insertion task.
-        The stages are: reaching, grasping, lifting, and mating.
-        """
-        # --- Stage 1: Reaching for the male buckle ---
-        # Dense reward for decreasing the distance between the gripper and the male buckle.
-        reach_dist = torch.norm(robot_grasp_pos - male_buckle_pos, p=2, dim=-1)
-        reach_reward = torch.exp(-4.0 * reach_dist)
 
-        # --- Stage 2: Grasping the male buckle ---
-        # Rewards closing the gripper, but only when it's already close to the buckle.
-        # This encourages a deliberate grasp action at the correct time.
-        # Assumes normalized_gripper_pos is 1.0 when fully closed.
-        grasp_reward = torch.where(
-            reach_dist < 0.03, # Only provide reward when gripper is within 3cm
-            normalized_gripper_pos,
-            torch.zeros_like(reach_dist)
-        )
-        
-        # --- New Reward: Approach with Correct Angle (User Request) ---
-        # Reward for approaching the male buckle, but only when the gripper joint is
-        # within a specific angle range (20-30 degrees) to encourage a good posture.
-        min_angle_rad = math.radians(20.0) # 20 degrees
-        max_angle_rad = math.radians(30.0) # 30 degrees
-        is_angle_valid = (gripper_joint_angle >= min_angle_rad) & (gripper_joint_angle <= max_angle_rad)
-        
-        # The reward is based on proximity, active only when the angle is correct.
-        approach_angle_reward = torch.where(
-            is_angle_valid,
-            torch.exp(-4.0 * reach_dist), # Same decay as reach_reward
-            torch.zeros_like(reach_dist)
-        )
+@torch.jit.script
+def compute_rewards(
+    # Core state
+    actions: torch.Tensor,
+    buckle_ftom_pose: torch.Tensor,
+    # Gripper and Male Buckle states
+    robot_grasp_pos: torch.Tensor,
+    male_buckle_pos: torch.Tensor,
+    male_buckle_z_pos: torch.Tensor,
+    normalized_gripper_pos: torch.Tensor,
+    gripper_joint_angle: torch.Tensor,
+    # Reward scales from config
+    reach_reward_scale: float,
+    grasp_reward_scale: float,
+    lift_reward_scale: float,
+    mate_reward_scale: float,
+    success_bonus: float,
+    action_penalty_scale: float,
+    approach_angle_reward_scale: float,
+):
+    """
+    Computes rewards using a staged approach for the buckle insertion task.
+    The stages are: reaching, grasping, lifting, and mating.
+    """
+    # --- Stage 1: Reaching for the male buckle ---
+    # Dense reward for decreasing the distance between the gripper and the male buckle.
+    reach_dist = torch.norm(robot_grasp_pos - male_buckle_pos, p=2, dim=-1)
+    reach_reward = torch.exp(-4.0 * reach_dist)
 
-        # --- New Reward: Drive Command Near Target (User Request) ---
-        # Reward for issuing a specific drive command when the gripper is near the male buckle.
-        # This gives an exponentially higher reward as the command nears a target value.
-        # NOTE: The user's requested range "20 to -2" is unusual. Based on the request
-        # to reward "nearing lower number", I've set the target to -2.0.
-        drive_cmd = actions[:, -1]  # Assuming the last action is the gripper drive command
-        target_drive_cmd = -2.0
-        
-        # Exponential reward based on the L1 distance to the target command.
-        # The 5.0 factor controls the sharpness of the reward peak.
-        drive_proximity_reward = torch.exp(-5.0 * torch.abs(drive_cmd - target_drive_cmd))
+    # --- Stage 2: Grasping the male buckle ---
+    # Rewards closing the gripper, but only when it's already close to the buckle.
+    # This encourages a deliberate grasp action at the correct time.
+    # Assumes normalized_gripper_pos is 1.0 when fully closed.
+    grasp_reward = torch.where(
+        reach_dist < 0.03, # Only provide reward when gripper is within 3cm
+        normalized_gripper_pos, 
+        torch.zeros_like(reach_dist)
+    )
+    
+    # --- New Reward: Approach with Correct Angle (User Request) ---
+    # Reward for approaching the male buckle, but only when the gripper joint is
+    # within a specific angle range (20-30 degrees) to encourage a good posture.
+    min_angle_rad = math.radians(10.0) # 20 degrees
+    max_angle_rad = math.radians(20.0) # 30 degrees
+    #reward only then open gripper and 5cm away cause when it gets closer to object gripper needs to close.
+    is_angle_valid = (gripper_joint_angle >= min_angle_rad) & (gripper_joint_angle <= max_angle_rad) & (reach_dist <= 0.05)
+    
+    # The reward is based on proximity, active only when the angle is correct.
+    approach_angle_reward = torch.where(
+        is_angle_valid,
+        torch.exp(-4.0 * reach_dist), # Same decay as reach_reward
+        torch.zeros_like(reach_dist)
+    )
 
-        # Only give this reward when the gripper is very close to the buckle.
-        drive_command_reward = torch.where(
-            reach_dist < 0.05, # Give reward when within 5cm
-            drive_proximity_reward,
-            torch.zeros_like(reach_dist)
-        )
+    # --- Define a flag for when the buckle is considered "grasped" ---
+    # This is the key to staging the subsequent rewards.
+    # We consider it grasped if the gripper is close and mostly closed.
+    is_grasped = (reach_dist < 0.04) & (normalized_gripper_pos > 0.8)
 
-        # --- Define a flag for when the buckle is considered "grasped" ---
-        # This is the key to staging the subsequent rewards.
-        # We consider it grasped if the gripper is close and mostly closed.
-        is_grasped = (reach_dist < 0.04) & (normalized_gripper_pos > 0.8)
-
-        # --- Stage 3: Lifting the buckle ---
-        # After grasping, reward the agent for lifting the buckle off the surface.
-        # This prevents dragging and encourages a stable pickup.
-        # The reward is shaped to be proportional to the height, up to a target.
-        lift_height_target = 0.02 # 2cm
-        lift_reward = torch.clamp(male_buckle_z_pos / lift_height_target, 0.0, 1.0)
+    # --- Stage 3: Lifting the buckle ---
+    # After grasping, reward the agent for lifting the buckle off the surface.
+    # This prevents dragging and encourages a stable pickup.
+    # The reward is shaped to be proportional to the height, up to a target.
+    lift_height_target = 0.02 # 2cm
+    lift_reward = torch.clamp(male_buckle_z_pos / lift_height_target, 0.0, 1.0)
 
 
-        # --- Stage 4: Mating the buckles ---
-        # This reward is only significant after the buckle is grasped.
-        relative_pos = buckle_ftom_pose[:, :3]
-        relative_quat = buckle_ftom_pose[:, 3:] # Assuming (x, y, z, w) format
+    # --- Stage 4: Mating the buckles ---
+    # This reward is only significant after the buckle is grasped.
+    relative_pos = buckle_ftom_pose[:, :3]
+    relative_quat = buckle_ftom_pose[:, 3:] # Assuming (x, y, z, w) format
 
-        # Reward for minimizing the distance between the two buckles.
-        mate_dist = torch.norm(relative_pos, p=2, dim=-1)
-        mate_pos_reward = torch.exp(-10.0 * mate_dist)
+    # Reward for minimizing the distance between the two buckles.
+    mate_dist = torch.norm(relative_pos, p=2, dim=-1)
+    mate_pos_reward = torch.exp(-10.0 * mate_dist)
 
-        # Reward for correct alignment. The target is an identity quaternion (0,0,0,1).
-        # The dot product with an identity quaternion is just the w-component.
-        # We reward w^2, which is 1 for perfect alignment (w=1 or w=-1).
-        mate_orient_reward = relative_quat[:, 3] ** 2
+    # Reward for correct alignment. The target is an identity quaternion (0,0,0,1).
+    # The dot product with an identity quaternion is just the w-component.
+    # We reward w^2, which is 1 for perfect alignment (w=1 or w=-1).
+    mate_orient_reward = relative_quat[:, 3] ** 2
 
-        # Combine position and orientation rewards. Orientation becomes more important
-        # as the buckles get closer.
-        mate_reward = mate_pos_reward * (1.0 + 0.5 * mate_orient_reward)
+    # Combine position and orientation rewards. Orientation becomes more important
+    # as the buckles get closer.
+    mate_reward = mate_pos_reward * (1.0 + 0.5 * mate_orient_reward)
 
-        # --- Success Bonus ---
-        # A large, sparse bonus for achieving the final goal state.
-        # Condition: very close in position and well-aligned in orientation.
-        is_success = (mate_dist < 0.01) & (mate_orient_reward > 0.98)
-        success_reward = torch.where(
-            is_grasped & is_success,
-            torch.full_like(reach_dist, success_bonus),
-            torch.zeros_like(reach_dist)
-        )
+    # --- Success Bonus ---
+    # A large, sparse bonus for achieving the final goal state.
+    # Condition: very close in position and well-aligned in orientation.
+    is_success = (mate_dist < 0.01) & (mate_orient_reward > 0.98)
+    success_reward = torch.where(
+        is_grasped & is_success,
+        torch.full_like(reach_dist, success_bonus),
+        torch.zeros_like(reach_dist)
+    )
 
-        # --- Action Regularization ---
-        # Penalize large actions to encourage smooth and efficient movements.
-        action_penalty = torch.sum(actions**2, dim=-1)
+    # --- Action Regularization ---
+    # Penalize large actions to encourage smooth and efficient movements.
+    action_penalty = torch.sum(actions**2, dim=-1)
 
-        # --- Combine all reward components ---
-        # Use the `is_grasped` flag to activate rewards for lifting and mating only
-        # after the buckle has been picked up.
-        reach_reward = reach_reward_scale * reach_reward
-        grasp_reward = grasp_reward_scale * grasp_reward
-        approach_angle_reward = approach_angle_reward_scale * approach_angle_reward # Scale new reward
-        drive_command_reward = drive_command_reward_scale * drive_command_reward # Scale new reward
-        lift_reward = torch.where(is_grasped, lift_reward_scale * lift_reward, torch.zeros_like(lift_reward))
-        mate_reward = torch.where(is_grasped, mate_reward_scale * mate_reward, torch.zeros_like(mate_reward))
-        action_penalty = action_penalty_scale * action_penalty
-        
-        total_reward = (
-            reach_reward
-            + grasp_reward
-            + approach_angle_reward
-            + drive_command_reward
-            + lift_reward
-            + mate_reward
-            + success_reward
-            - action_penalty
-        )
-        
-        wandb.log({
-                "mean_reward": total_reward.mean().item(),
-                "max_reward": total_reward.max().item(),
-                "min_reward": total_reward.min().item(),
-                "reach_reward": reach_reward.mean().item(),
-                "grasp_reward": grasp_reward.mean().item(),
-                "approach_angle_reward": approach_angle_reward.mean().item(), # Log new reward
-                "drive_command_reward": drive_command_reward.mean().item(), # Log new reward
-                "lift_reward": lift_reward.mean().item(),
-                "mate_reward": mate_reward.mean().item(),
-                "action_penalty": action_penalty.mean().item(),
-                "success_reward": success_reward.mean().item(),
-            }, step=self.common_step_counter)
+    # --- Combine all reward components ---
+    # Use the `is_grasped` flag to activate rewards for lifting and mating only
+    # after the buckle has been picked up.
+    reach_reward = reach_reward_scale * reach_reward
+    grasp_reward = grasp_reward_scale * grasp_reward
+    approach_angle_reward = approach_angle_reward_scale * approach_angle_reward # Scale new reward
+    lift_reward = torch.where(is_grasped, lift_reward_scale * lift_reward, torch.zeros_like(lift_reward))
+    mate_reward = torch.where(is_grasped, mate_reward_scale * mate_reward, torch.zeros_like(mate_reward))
+    action_penalty = action_penalty_scale * action_penalty
+    
+    total_reward = (
+        reach_reward
+        + grasp_reward
+        + approach_angle_reward
+        + lift_reward
+        + mate_reward
+        + success_reward
+        - action_penalty
+    )
+    
+    wandb_log = {
+            "mean_reward": total_reward.mean().item(),
+            "max_reward": total_reward.max().item(),
+            "min_reward": total_reward.min().item(),
+            "reach_reward": reach_reward.mean().item(),
+            "grasp_reward": grasp_reward.mean().item(),
+            "approach_angle_reward": approach_angle_reward.mean().item(), # Log new reward
+            "lift_reward": lift_reward.mean().item(),
+            "mate_reward": mate_reward.mean().item(),
+            "action_penalty": action_penalty.mean().item(),
+            "success_reward": success_reward.mean().item(),
+        }
 
-        return total_reward
+    return total_reward, wandb_log
