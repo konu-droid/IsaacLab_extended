@@ -114,14 +114,12 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         self.robot_grasp_pos = self.robot.data.body_link_pos_w[:, self.gripper_frame_link_idx]
         self.robot_grasp_pos[:, 0] = self.robot_grasp_pos[:, 0] + 0.1 # since the centre of gripper is in x forward direction.
         
-        female_pose = self.female_buckle.data.body_com_pose_w.squeeze(1)  # (N, 1, 7)
-        male_pose = self.male_buckle.data.body_com_pose_w.squeeze(1)      # (N, 1, 7)
         # Split into rotation and translation
-        female_t = female_pose[:, :3]         # shape: (N, 3)
-        female_q = female_pose[:, 3:]         # shape: (N, 4)
+        female_t = self.female_buckle.data.body_com_pos_w.squeeze(1)  # (N, 3)
+        female_q = self.female_buckle.data.body_com_quat_w.squeeze(1)      # (N, 4)
 
-        male_t = male_pose[:, :3]
-        male_q = male_pose[:, 3:]
+        male_t =  self.male_buckle.data.body_com_pos_w.squeeze(1)      # (N, 3)
+        male_q = self.male_buckle.data.body_com_quat_w.squeeze(1)      # (N, 4)
         
         self.buckle_grasp_pos = male_t
         # distance between the gripper and male buckle
