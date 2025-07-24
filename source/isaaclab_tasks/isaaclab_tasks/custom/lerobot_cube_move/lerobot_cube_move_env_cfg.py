@@ -56,7 +56,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     )
     
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=16, env_spacing=4.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -108,7 +108,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     buckle_male_cfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/buckle_male",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/Male_Buckle.usd",
+            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/Male_Buckle_Simple.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -121,11 +121,11 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
             ),
             scale=(0.5, 0.5, 0.5),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.3, 0.01, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.2, 0.01, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
     # custom parameters/scales
-    action_scale = 7.5
+    action_scale = 1.0
     dof_velocity_scale = 0.1
 
     # reward scales

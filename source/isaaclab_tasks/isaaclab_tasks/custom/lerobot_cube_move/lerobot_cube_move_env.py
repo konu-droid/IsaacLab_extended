@@ -96,8 +96,8 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         light_cfg.func("/World/Light", light_cfg)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
-        self.actions = actions.clone().clamp(-1.0, 1.0)
-        targets = self.robot_dof_targets + self.robot_dof_speed_scales * self.dt * self.actions * self.cfg.action_scale
+        self.actions = actions.clone()
+        targets = self.robot_dof_targets + (self.robot_dof_speed_scales * self.dt * self.actions)
         self.robot_dof_targets[:] = torch.clamp(targets, self.robot_dof_lower_limits, self.robot_dof_upper_limits)
 
     def _apply_action(self) -> None:
@@ -276,7 +276,7 @@ def compute_rewards(
     min_angle_rad = math.radians(10.0) # 20 degrees
     max_angle_rad = math.radians(20.0) # 30 degrees
     #reward only then open gripper and 5cm away cause when it gets closer to object gripper needs to close.
-    is_angle_valid = (gripper_joint_angle >= min_angle_rad) & (gripper_joint_angle <= max_angle_rad) & (reach_dist <= 0.05)
+    is_angle_valid = ((gripper_joint_angle >= min_angle_rad) & (gripper_joint_angle <= max_angle_rad) & (reach_dist >= 0.05)) | ((reach_dist <= 0.05) & (gripper_joint_angle <= min_angle_rad))
     
     # The reward is based on proximity, active only when the angle is correct.
     approach_angle_reward = torch.where(
@@ -288,7 +288,7 @@ def compute_rewards(
     # --- Define a flag for when the buckle is considered "grasped" ---
     # This is the key to staging the subsequent rewards.
     # We consider it grasped if the gripper is close and mostly closed.
-    is_grasped = (reach_dist < 0.04) & (normalized_gripper_pos > 0.8)
+    is_grasped = (reach_dist < 0.02) & (normalized_gripper_pos > 0.8)
 
     # --- Stage 3: Lifting the buckle ---
     # After grasping, reward the agent for lifting the buckle off the surface.

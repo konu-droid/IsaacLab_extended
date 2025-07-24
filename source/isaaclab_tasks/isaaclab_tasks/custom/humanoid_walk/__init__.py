@@ -13,11 +13,11 @@ from . import agents
 
 
 gym.register(
-    id="Isaac-Lerobot-Cube-Move-Direct-v0",
-    entry_point=f"{__name__}.lerobot_cube_move_env:LerobotCubeMoveEnv",
+    id="Isaac-Humanoid-Walk-Direct-v0",
+    entry_point=f"{__name__}.humanoid_walk_env:HumanoidWalkEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.lerobot_cube_move_env_cfg:LerobotCubeMoveEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.humanoid_walk_env_cfg:HumanoidWalkEnvCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
     },
 )
