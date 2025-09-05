@@ -56,7 +56,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     )
     
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.0, replicate_physics=True)
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -86,10 +86,10 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     )
 
     # snap fit buckle
-    buckle_female_cfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/buckle_female",
+    pick_cube_cfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/pick_cube",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/Female_Buckle.usd",
+            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/cube.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -100,15 +100,15 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
                 stabilization_threshold=0.0025,
                 max_depenetration_velocity=1000.0,
             ),
-            scale=(0.5, 0.5, 0.5),
+            scale=(0.01, 0.01, 0.01),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.3, 0.1, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
     )
     
-    buckle_male_cfg = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/buckle_male",
+    target_cube_cfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/target_cube",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/Male_Buckle_Simple.usd",
+            usd_path="/home/konu/Documents/IsaacLab/robots_usd/lerobot/additional_assets/cube.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -119,7 +119,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
                 stabilization_threshold=0.0025,
                 max_depenetration_velocity=1000.0,
             ),
-            scale=(0.5, 0.5, 0.5),
+            scale=(0.01, 0.01, 0.01),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.2, 0.01, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -128,15 +128,13 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     action_scale = 1.0
     dof_velocity_scale = 0.1
 
-    # reward scales
-    dist_reward_scale = 1.5
-    mate_reward_scale = 10.0
-    action_penalty_scale = 0.05
-    
+    # reward scales    
     reach_reward_scale: float = 1.0
-    grasp_reward_scale: float = 2.0
-    contact_reward_scale = 10.0
-    lift_reward_scale: float = 2.0    
-    approach_angle_reward_scale: float = 1.0
+    grasp_reward_scale: float = 0.0
+    contact_reward_scale = 0.0
+    lift_reward_scale: float = 0.0   
+    approach_angle_reward_scale: float = 0.0
+    mate_reward_scale = 0.0
+    action_penalty_scale = 0.0
     
     success_bonus: float = 10.0

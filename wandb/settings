@@ -1,0 +1,5 @@
+[default]
+entity = konu-droid
+project = snapfit_franka
+base_url = https://api.wandb.ai
+
