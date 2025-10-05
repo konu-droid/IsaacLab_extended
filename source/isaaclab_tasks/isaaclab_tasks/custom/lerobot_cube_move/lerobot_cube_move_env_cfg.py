@@ -21,7 +21,7 @@ from .isaaclab_asset.lerobot_so101 import SO101_CFG
 @configclass
 class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 8.3333  # 500 timesteps
+    episode_length_s = 3  # 500 timesteps
     decimation = 2
     action_space = 6
     observation_space = 22
@@ -33,8 +33,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
         dt=1 / 120,
         render_interval=decimation,
         physx=PhysxCfg(
-            # The error message suggested a size of at least 297529608
-            gpu_collision_stack_size=500000000  # Give it a bit of a buffer
+            gpu_collision_stack_size=2 * 1024 * 1024 * 1024  # 2gb allocated
         )
     )
     
@@ -44,19 +43,19 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     # sontact sensors
     contact_sensor_left_finger = ContactSensorCfg(
         prim_path="/World/envs/env_.*/Robot/moving_jaw_so101_v1_link",
-        filter_prim_paths_expr=["/World/envs/env_.*/buckle_male"],
+        filter_prim_paths_expr=["/World/envs/env_.*/pick_cube"],
         history_length=3,
         debug_vis=False,
     )
     contact_sensor_right_finger = ContactSensorCfg(
         prim_path="/World/envs/env_.*/Robot/gripper_link",
-        filter_prim_paths_expr=["/World/envs/env_.*/buckle_male"],
+        filter_prim_paths_expr=["/World/envs/env_.*/pick_cube"],
         history_length=3,
         debug_vis=False,
     )
     
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=16, env_spacing=2.0, replicate_physics=True)
 
     # ground plane
     terrain = TerrainImporterCfg(
@@ -129,12 +128,13 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     dof_velocity_scale = 0.1
 
     # reward scales    
-    reach_reward_scale: float = 1.0
-    grasp_reward_scale: float = 0.0
-    contact_reward_scale = 0.0
-    lift_reward_scale: float = 0.0   
-    approach_angle_reward_scale: float = 0.0
+    reach_reward_scale: float = 2.0
+    alignment_reward_scale: float = 2.0
+    approach_angle_reward_scale: float = 2.0
+    grasp_reward_scale: float = 2.0
+    contact_reward_scale = 1.0
+    lift_reward_scale: float = 0.0
     mate_reward_scale = 0.0
-    action_penalty_scale = 0.0
+    action_penalty_scale = 0.001
     
     success_bonus: float = 10.0

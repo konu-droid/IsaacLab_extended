@@ -80,6 +80,7 @@ import random
 import time
 import torch
 
+import omni
 import skrl
 from packaging import version
 
@@ -223,6 +224,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, expe
             else:
                 actions = outputs[-1].get("mean_actions", outputs[0])
             # env stepping
+            # zero_action = torch.zeros_like(actions)
+            # print(actions)
             obs, _, _, _, _ = env.step(actions)
         if args_cli.video:
             timestep += 1
