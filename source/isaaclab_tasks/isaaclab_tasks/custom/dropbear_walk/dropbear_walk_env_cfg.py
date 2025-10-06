@@ -48,9 +48,10 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     # - robot reset 
     fall_height = 1.0 # the head is at 1.7m 
     # - action scale
-    action_scale = 10.0
+    action_scale = 1.0
     # - reward scales
-    rew_scale_alive = 1.0
+    rew_scale_alive = 10.0
     rew_scale_terminated = -2.0
     rew_scale_goal_dist = 1.0
+    rew_scale_forward_velocity = 1.0
     rew_scale_height_dist = 0.2

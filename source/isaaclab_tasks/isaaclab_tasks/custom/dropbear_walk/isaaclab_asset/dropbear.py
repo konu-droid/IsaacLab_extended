@@ -43,23 +43,19 @@ DROPBEAR_CFG = DropbearArticulationCfg(
         usd_path=f"/home/konu/Documents/IsaacLab_extended/robots_usd/hyperspawn/dropbear.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,  # Disable gravity to prevent physics explosions
+            disable_gravity=False,
             retain_accelerations=False,
-            linear_damping=0.1,  # Add some damping for stability
-            angular_damping=0.1,  # Add some damping for stability
-            max_linear_velocity=1.0,  
-            max_angular_velocity=1.0,  
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,  
+            max_angular_velocity=1000.0,  
             max_depenetration_velocity=1.0,  # Reduce depenetration velocity
-            enable_gyroscopic_forces=False,  # Disable for simplicity
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             enabled_self_collisions=False,  # Disable self-collisions for stability
             solver_position_iteration_count=255,  # Keep high for our humanoid, 100 is good but with 255(max) i get zero Nan problem!
             solver_velocity_iteration_count=2,  # Keep high for our humanoid
             fix_root_link=False,  # Disable debugging_joint to prevent coordinate explosions
-        ),
-        mass_props=sim_utils.MassPropertiesCfg(
-            mass=5.0,
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -115,15 +111,17 @@ DROPBEAR_CFG = DropbearArticulationCfg(
                 "LL_hip_joint", "LL_knee_actuator_joint", "RL_hip_joint", "RL_knee_actuator_joint",
                 "LL_Revolute67", "LL_Revolute81", "RL_Revolute67", "RL_Revolute81",
             ],
-            stiffness=1000.0,  
-            damping=100.0, 
+            effort_limit_sim=2000.0,
+            stiffness=100.0,  
+            damping=5.0, 
         ),
         "neck": ImplicitActuatorCfg(
             joint_names_expr=[
                 "head_LeadScrew1", "head_LeadScrew2", "head_LeadScrew3",
                 "head_LeadScrew4", "head_LeadScrew5", "head_LeadScrew6",
             ],
-            stiffness=10000.0, 
+            effort_limit_sim=2000.0,
+            stiffness=1000.0, 
             damping=100.0,  
         ),
     },

@@ -58,7 +58,7 @@ class DropbearWalkEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self.actions = actions.clone()
-        targets = (self.action_scale * self.actions) * self.dt
+        targets = (self.action_scale * self.actions)
 
         # handling NaNs
         bad_env_ids = torch.any(torch.isnan(targets) | torch.isinf(targets), dim=1)
@@ -111,13 +111,17 @@ class DropbearWalkEnv(DirectRLEnv):
     def _get_rewards(self) -> torch.Tensor:
         
         head_pos = self.robot.data.body_link_pos_w[:, self.head_mesh_idx, :].squeeze()
+        root_lin_vel = self.robot.data.root_link_lin_vel_w
+
 
         total_reward = compute_rewards(
             self.cfg.rew_scale_alive,
             self.cfg.rew_scale_terminated,
             self.cfg.rew_scale_goal_dist,
+            self.cfg.rew_scale_forward_velocity,
             self.cfg.rew_scale_height_dist,
             self.robot.data.root_link_pos_w,
+            root_lin_vel,
             head_pos,
             self.scene.env_origins,
             self.reset_terminated,
@@ -183,8 +187,10 @@ def compute_rewards(
     rew_scale_alive: float,
     rew_scale_terminated: float,
     rew_scale_goal_dist: float,
+    rew_scale_forward_velocity: float,
     rew_scale_height_dist: float,
     robot_root_pos: torch.Tensor,
+    robot_root_vel: torch.Tensor,
     head_pos: torch.Tensor,
     env_origins: torch.Tensor,
     reset_terminated: torch.Tensor,
@@ -206,6 +212,10 @@ def compute_rewards(
     # Calculate the distance to the goal in the xy-plane (ignoring height).
     dist_to_goal = torch.norm(goal_pos[:, :2] - robot_root_pos[:, :2], p=2, dim=-1)
 
+    # -- Reward for moving forward --
+    # Directly reward the velocity in the x-direction
+    forward_vel_reward = rew_scale_forward_velocity * robot_root_vel[:, 0]
+
     goal_height = env_origins + torch.tensor([0.0, 0.0, 1.5], device=robot_root_pos.device)
     dist_to_height = torch.norm(goal_height[:, 2] - head_pos[:, 2], p=2, dim=-1)
 
@@ -213,5 +223,5 @@ def compute_rewards(
     reward_height = rew_scale_height_dist * torch.exp(-dist_to_height)
 
     # -- total reward
-    total_reward = rew_alive + rew_termination + reward_goal + reward_height
+    total_reward = rew_alive + rew_termination + reward_goal + reward_height + forward_vel_reward
     return total_reward
