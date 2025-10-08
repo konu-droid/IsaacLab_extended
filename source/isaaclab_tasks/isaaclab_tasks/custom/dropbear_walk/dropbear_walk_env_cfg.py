@@ -8,6 +8,7 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
+from isaaclab.sensors import ContactSensorCfg
 
 from isaaclab.sim import PhysxCfg
 
@@ -34,8 +35,17 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
         )
     )
 
-    # robot(s)
+    # robot
     robot_cfg: ArticulationCfg = DROPBEAR_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+
+    # Sensors
+    contact_sensor_feet: ContactSensorCfg = ContactSensorCfg(
+        prim_path="/World/envs/env_.*/Robot/.*L_skateboard_bearing_left_2",
+        update_period=0.005,
+        history_length=6,
+        track_air_time=True,
+        debug_vis=False,
+    )
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=16, env_spacing=4.0, replicate_physics=True)
@@ -43,8 +53,10 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     # custom parameters/scales
     # - controllable joint
     actuated_joint_names = robot_cfg.joint_sdk_names
+    head_mesh = "head_u_joint_center__8__1"
     head_joint_names = ["head_LeadScrew1", "head_LeadScrew2", "head_LeadScrew3",
                         "head_LeadScrew4", "head_LeadScrew5", "head_LeadScrew6"]
+    feet_joint_names = ["RL_skateboard_bearing_left_2", "LL_skateboard_bearing_left_2"]
     # - robot reset 
     fall_height = 1.0 # the head is at 1.7m 
     # - action scale
@@ -55,3 +67,5 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     rew_scale_goal_dist = 1.0
     rew_scale_forward_velocity = 1.0
     rew_scale_height_dist = 0.2
+    rew_scale_foot_contact = 1.0
+    rew_scale_air_time = 1.0

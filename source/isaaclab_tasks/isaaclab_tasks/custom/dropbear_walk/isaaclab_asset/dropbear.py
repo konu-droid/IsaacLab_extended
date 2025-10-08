@@ -111,7 +111,7 @@ DROPBEAR_CFG = DropbearArticulationCfg(
                 "LL_hip_joint", "LL_knee_actuator_joint", "RL_hip_joint", "RL_knee_actuator_joint",
                 "LL_Revolute67", "LL_Revolute81", "RL_Revolute67", "RL_Revolute81",
             ],
-            effort_limit_sim=2000.0,
+            effort_limit_sim=200.0,
             stiffness=100.0,  
             damping=5.0, 
         ),
