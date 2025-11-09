@@ -44,15 +44,16 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         self.gripper_frame_link_idx = self.robot.find_bodies("gripper_link")[0][0]
 
         self.robot_grasp_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.pick_grasp_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.grasp_dist = torch.zeros((self.num_envs, 3), device=self.device)
+        self.pick_pos = torch.zeros((self.num_envs, 3), device=self.device)
+        self.place_pos = torch.zeros((self.num_envs, 3), device=self.device)
         self.pick_ftom_pose = torch.zeros((self.num_envs, 7), device=self.device)
+        self.picked = torch.zeros((self.num_envs, 1), device=self.device)
         
         self.gripper_dof_idx = self.robot.find_joints("gripper")[0]
         # Buffer for the pick pick's height (for lift reward)
-        self.pick_pick_z_pos = torch.zeros(self.num_envs, device=self.device)
+        self.pick_pick_z_pos = torch.zeros((self.num_envs, 1), device=self.device)
         # Buffer for the gripper's joint position, normalized between [0, 1]
-        self.normalized_gripper_pos = torch.zeros(self.num_envs, device=self.device)
+        self.normalized_gripper_dist = torch.zeros((self.num_envs, 1), device=self.device)
         # Extract gripper limits for normalization
         self.gripper_lower_limit = self.robot_dof_lower_limits[self.gripper_dof_idx[0]]
         self.gripper_upper_limit = self.robot_dof_upper_limits[self.gripper_dof_idx[0]]
@@ -122,30 +123,37 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         pick_t = self.pick_cube.data.root_com_pos_w.squeeze(1)      # (N, 3)
         pick_q = self.pick_cube.data.root_com_quat_w.squeeze(1)      # (N, 4)
         
-        self.pick_grasp_pos = pick_t
-        # distance between the gripper and pick pick
-        self.grasp_dist = self.pick_grasp_pos - self.robot_grasp_pos
+        self.pick_pos = pick_t + torch.tensor([0.0, 0.0, 0.05], device=self.device)
+        self.place_pos = target_t
+        # distance 
+        pick_dist_pos = self.pick_pos - self.robot_grasp_pos
+        place_dist_pos = self.place_pos - self.robot_grasp_pos
+        pick_dist = torch.norm(self.pick_pos - self.robot_grasp_pos, p=2, dim=-1).unsqueeze(dim=-1)
+        place_dist = torch.norm(self.place_pos - self.robot_grasp_pos, p=2, dim=-1).unsqueeze(dim=-1)
+        # check if pick is done
+        self.picked = torch.where(pick_dist < 0.05, 1.0, self.picked)
 
-        # Invert the target pose
-        target_q_inv, target_t_inv = tf_inverse(target_q, target_t)  # each is (N, 4) and (N, 3)
-        # Now combine: T_relative = inv(T_target) * T_pick
-        relative_q, relative_t = tf_combine(target_q_inv, target_t_inv, pick_q, pick_t)
-        # Combine back into SE(3) pose
-        self.pick_ftom_pose = torch.cat([relative_t, relative_q], dim=-1)  # shape: (N, 7)
+        # # Invert the target pose
+        # target_q_inv, target_t_inv = tf_inverse(target_q, target_t)  # each is (N, 4) and (N, 3)
+        # # Now combine: T_relative = inv(T_target) * T_pick
+        # relative_q, relative_t = tf_combine(target_q_inv, target_t_inv, pick_q, pick_t)
+        # # Combine back into SE(3) pose
+        # self.pick_ftom_pose = torch.cat([relative_t, relative_q], dim=-1)  # shape: (N, 7)
         
-        # Get the pick pick's Z-position for the lift reward
-        self.pick_pick_z_pos[:] = pick_t[:, 2]
-        # Get the gripper's current joint position
+        # # Get the pick's Z-position for the lift reward
+        # self.pick_pick_z_pos[:] = pick_t[:, 2]
+        # # Get the gripper's current joint position
         gripper_pos = self.robot.data.joint_pos[:, self.gripper_dof_idx[0]]
         # Normalize it to a [0, 1] range where 1 is closed
-        self.normalized_gripper_pos[:] = (self.gripper_upper_limit - gripper_pos) / (self.gripper_upper_limit - self.gripper_lower_limit)
+        self.normalized_gripper_dist[:, 0] = (self.gripper_upper_limit - gripper_pos) / (self.gripper_upper_limit - self.gripper_lower_limit)
 
         obs = torch.cat(
             (
                 dof_pos_scaled,
-                self.pick_ftom_pose,
-                self.grasp_dist,
-                self.actions
+                pick_dist_pos,
+                place_dist_pos,
+                self.picked,
+                self.normalized_gripper_dist,
             ),
             dim=-1,
         )
@@ -156,23 +164,22 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         # We calculate the magnitude of the force vector.
         left_finger_force = torch.norm(self.contact_left_finger.data.net_forces_w, dim=-1)
         right_finger_force = torch.norm(self.contact_right_finger.data.net_forces_w, dim=-1)
+
+        pick_cube_vel = self.pick_cube.data.root_com_lin_vel_w.squeeze(1)      # (N, 3)
         
         total_reward, wandb_log = compute_rewards(
-            self.actions,
-            self.pick_ftom_pose,
+            # -- scales
+            self.cfg.pick_reward_scale,
+            self.cfg.place_reward_scale,
+            self.cfg.gripper_reward_scale,
+            self.cfg.pick_moved_reward_scale,
+            # -- tensors
             self.robot_grasp_pos,
-            self.pick_grasp_pos,  # This is the pick pick position
-            self.pick_pick_z_pos,
-            self.normalized_gripper_pos,
-            self.robot.data.joint_pos[:, self.gripper_dof_idx[0]],
-            self.cfg.reach_reward_scale,
-            self.cfg.alignment_reward_scale,
-            self.cfg.grasp_reward_scale,
-            self.cfg.lift_reward_scale,
-            self.cfg.mate_reward_scale,
-            self.cfg.success_bonus,
-            self.cfg.action_penalty_scale,
-            self.cfg.approach_angle_reward_scale,
+            self.pick_pos,
+            self.place_pos,
+            self.picked,
+            self.normalized_gripper_dist,
+            pick_cube_vel,
         )
         
         wandb.log(wandb_log, step=self.common_step_counter)
@@ -225,8 +232,10 @@ class LerobotCubeMoveEnv(DirectRLEnv):
         # write the new state to the simulation
         self.target_cube.write_root_state_to_sim(target_new_state, env_ids)
 
-        # -- pick pick --
-        # reset the pick pick to its default state
+        # reset picked
+        self.picked[env_ids] = 0.0
+
+        # reset the pick to its default state
         pick_default_state = self.pick_cube.data.default_root_state[env_ids]
         pick_new_state = pick_default_state.clone()
         pick_new_state[:, 0:2] += pos_noise
@@ -236,148 +245,60 @@ class LerobotCubeMoveEnv(DirectRLEnv):
 
 @torch.jit.script
 def compute_rewards(
-    # Core state
-    actions: torch.Tensor,
-    pick_ftom_pose: torch.Tensor,
-    # Gripper and pick pick states
+    # -- scales
+    pick_reward_scale: float,
+    place_reward_scale: float,
+    gripper_reward_scale: float,
+    pick_moved_reward_scale: float,
+    # -- tensors
     robot_grasp_pos: torch.Tensor,
     pick_pos: torch.Tensor,
-    pick_z_pos: torch.Tensor,
-    normalized_gripper_pos: torch.Tensor,
-    gripper_joint_angle: torch.Tensor,
-    # Reward scales from config
-    reach_reward_scale: float,
-    aligment_reward_scale: float,
-    grasp_reward_scale: float,
-    lift_reward_scale: float,
-    mate_reward_scale: float,
-    success_bonus: float,
-    action_penalty_scale: float,
-    approach_angle_reward_scale: float,
+    place_pos: torch.Tensor,
+    picked: torch.Tensor,
+    normalized_gripper_dist: torch.Tensor,
+    pick_cube_vel: torch.Tensor,
 ):
     """
     Computes rewards using a staged approach for the pick insertion task.
     The stages are: reaching, grasping, lifting, and mating.
     """
 
-    grasp_dist = 0.01
-    cube_boundary_offset = 0.03
-    # --- Stage 1: Reaching for the pick ---
-    # Dense reward for decreasing the distance between the gripper and the pick.
-    cube_pos = pick_pos - cube_boundary_offset
-    reach_dist = torch.norm(robot_grasp_pos - cube_pos, p=2, dim=-1)
-    approach_reward = 1.0 / (1.0 + reach_dist)
-    approach_reward = torch.where(reach_dist <= grasp_dist, approach_reward * 2, approach_reward)
-    # approach_reward = approach_reward + torch.exp(-4.0 * reach_dist)
+    pick_dist = torch.norm(pick_pos - robot_grasp_pos, p=2, dim=-1).unsqueeze(dim=-1)
+    pick_approach_reward = pick_reward_scale * torch.exp(-pick_dist)
+    pick_approach_reward = torch.where(picked < 0.5, pick_approach_reward, pick_reward_scale * 1.0)
 
-    # 1. Positional Reward: Center the gripper over the cube.
-    alignment_dist = cube_pos[:, :2] - robot_grasp_pos[:, :2]
-    alignment_dist = torch.norm(alignment_dist, p=2, dim=-1)
-    alignment_reward = 1.0 / (1.0 + alignment_dist)
-    alignment_reward = approach_reward * alignment_reward  # scaling it  using approach reward
-    
-    # --- New Reward: Approach with Correct Angle (User Request) ---
-    # Reward for approaching the pick , but only when the gripper joint is
-    # within a specific angle range (20-30 degrees) to encourage a good posture.
-    min_angle_rad = math.radians(50.0) # 20 degrees
-    max_angle_rad = math.radians(90.0) # 30 degrees
-    #reward only then open gripper and 5cm away cause when it gets closer to object gripper needs to close.
-    is_angle_valid = ((gripper_joint_angle >= min_angle_rad) & (gripper_joint_angle <= max_angle_rad) & (reach_dist >= grasp_dist)) | ((reach_dist <= grasp_dist) & (gripper_joint_angle <= max_angle_rad))
-    
-    # The reward is based on proximity, active only when the angle is correct.
-    approach_angle_reward = torch.where(
-        is_angle_valid,
-        approach_reward,  # Same decay as reach_reward
-        torch.zeros_like(approach_reward)
-    )
+    place_dist = torch.norm(place_pos - robot_grasp_pos, p=2, dim=-1).unsqueeze(dim=-1)
+    place_approach_reward = place_reward_scale * torch.exp(-place_dist)
+    place_approach_reward = torch.where(picked > 0.5, place_approach_reward, 0.0)
 
-    # --- Stage 2: Grasping the pick  ---
-    # --- Define a flag for when the pick is considered "grasped" ---
-    # This is the key to staging the subsequent rewards.
-    # We consider it grasped if the gripper is close and mostly closed.
-    is_grasped = (reach_dist <= grasp_dist) & (normalized_gripper_pos > 0.5)
-    # Rewards closing the gripper, but only when it's already close to the pick.
-    # This encourages a deliberate grasp action at the correct time.
-    # Assumes normalized_gripper_pos is 1.0 when fully closed.
-    grasp_reward = torch.where(
-        is_grasped,  # Only provide reward when gripper is within 3cm
-        approach_reward * normalized_gripper_pos,
-        torch.zeros_like(approach_reward)
-    )
+    # making make false 0.0 else robot just moves quickly to place position with closed gripper for huger reward.
+    gripper_open_reward = gripper_reward_scale * (1.0 - normalized_gripper_dist)
+    gripper_open_reward = torch.where(picked < 0.5, gripper_open_reward, 0.0)  # gripper_reward_scale * 1.0
 
-    # --- Stage 3: Lifting the pick ---
-    # After grasping, reward the agent for lifting the pick off the surface.
-    # This prevents dragging and encourages a stable pickup.
-    # The reward is shaped to be proportional to the height, up to a target.
-    lift_height_target = 0.1 # 10cm
-    lift_reward = torch.clamp(pick_z_pos / lift_height_target, 0.0, 1.0)
+    gripper_close_reward = gripper_reward_scale * normalized_gripper_dist
+    gripper_close_reward = torch.where(picked > 0.5, gripper_close_reward, 0.0)
 
-
-    # --- Stage 4: Mating the picks ---
-    # This reward is only significant after the pick is grasped.
-    relative_pos = pick_ftom_pose[:, :3]
-    relative_quat = pick_ftom_pose[:, 3:]  # Assuming (x, y, z, w) format
-
-    # Reward for minimizing the distance between the two picks.
-    mate_dist = torch.norm(relative_pos, p=2, dim=-1)
-    mate_pos_reward = torch.exp(-10.0 * mate_dist)
-
-    # Reward for correct alignment. The target is an identity quaternion (0,0,0,1).
-    # The dot product with an identity quaternion is just the w-component.
-    # We reward w^2, which is 1 for perfect alignment (w=1 or w=-1).
-    mate_orient_reward = relative_quat[:, 3] ** 2
-
-    # Combine position and orientation rewards. Orientation becomes more important
-    # as the picks get closer.
-    mate_reward = mate_pos_reward * (1.0 + 0.5 * mate_orient_reward)
-
-    # --- Success Bonus ---
-    # A large, sparse bonus for achieving the final goal state.
-    # Condition: very close in position and well-aligned in orientation.
-    is_success = (mate_dist < 0.01) & (mate_orient_reward > 0.98)
-    success_reward = torch.where(
-        is_grasped & is_success,
-        torch.full_like(reach_dist, success_bonus),
-        torch.zeros_like(reach_dist)
-    )
-
-    # --- Action Regularization ---
-    # Penalize large actions to encourage smooth and efficient movements.
-    action_penalty = torch.sum(actions**2, dim=-1)
-
-    # --- Combine all reward components ---
-    # Use the `is_grasped` flag to activate rewards for lifting and mating only
-    # after the pick has been picked up.
-    reach_reward = reach_reward_scale * approach_reward
-    alignment_reward = aligment_reward_scale * alignment_reward
-    grasp_reward = grasp_reward_scale * grasp_reward
-    approach_angle_reward = approach_angle_reward_scale * approach_angle_reward  # Scale new reward
-    lift_reward = torch.where(is_grasped, lift_reward_scale * lift_reward, torch.zeros_like(lift_reward))
-    mate_reward = torch.where(is_grasped, mate_reward_scale * mate_reward, torch.zeros_like(mate_reward))
-    action_penalty = action_penalty_scale * action_penalty
+    pick_cube_move_penality = pick_moved_reward_scale * (torch.norm(pick_cube_vel) > 0.01)
     
     total_reward = (
-        reach_reward
-        + alignment_reward
-        + grasp_reward
-        + approach_angle_reward
-        + lift_reward
-        + mate_reward
-        + success_reward
-        - action_penalty
+        pick_approach_reward +
+        place_approach_reward +
+        gripper_open_reward + 
+        gripper_close_reward +
+        pick_cube_move_penality
     )
     
     wandb_log = {
         "reward/total_reward": total_reward.mean().item(),
-        "reward/approach_reward": approach_reward.mean().item(),
-        "reward/approach_angle_reward": approach_angle_reward.mean().item(),
-        "reward/grasp_reward": grasp_reward.mean().item(),
-        "reward/alignment_reward": alignment_reward.mean().item(),
-        "reward/mate_reward": mate_reward.mean().item(),
-        "penalty/action_penalty": action_penalty.mean().item(),
-        "state/gripper_to_pick_dist": reach_dist.mean().item(),
-        "state/alignment_dist": alignment_dist.mean().item(),
-        "state/pick_to_target_dist": mate_dist.mean().item(),
+        "reward/pick_approach_reward": pick_approach_reward.mean().item(),
+        "reward/place_approach_reward": place_approach_reward.mean().item(),
+        "reward/gripper_open_reward": gripper_open_reward.mean().item(),
+        "reward/gripper_close_reward": gripper_close_reward.mean().item(),
+        "reward/pick_cube_move_penality": pick_cube_move_penality.mean().item(),
+        "state/pick_dist": pick_dist.mean().item(),
+        "state/place_dist": place_dist.mean().item(),
+        "state/picked": picked.mean().item(),
+        "state/gripper_dist": normalized_gripper_dist.mean().item(),
     }
 
     return total_reward, wandb_log

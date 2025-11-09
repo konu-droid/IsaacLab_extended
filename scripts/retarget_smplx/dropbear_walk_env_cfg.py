@@ -12,14 +12,13 @@ from isaaclab.sensors import ContactSensorCfg
 
 from isaaclab.sim import PhysxCfg
 
-from .isaaclab_asset.dropbear import DROPBEAR_CFG
-
+from isaaclab_asset.dropbear import DROPBEAR_CFG
 
 @configclass
 class DropbearWalkEnvCfg(DirectRLEnvCfg):
     # env
     decimation = 2
-    episode_length_s = 10.0  # s * 120 STEPS
+    episode_length_s = 5.0  # 5.0 * 120 STEPS
     # - spaces definition
     action_space = 12  # 28
     observation_space = 29  # 61
@@ -37,7 +36,7 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot_cfg: ArticulationCfg = DROPBEAR_CFG.replace(prim_path="/World/envs/env_.*/Robot")  # type: ignore
+    robot_cfg: ArticulationCfg = DROPBEAR_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # Sensors
     contact_sensor_feet: ContactSensorCfg = ContactSensorCfg(
@@ -53,7 +52,7 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
 
     # custom parameters/scales
     # - controllable joint
-    actuated_joint_names = robot_cfg.joint_sdk_names  # type: ignore
+    actuated_joint_names = robot_cfg.joint_sdk_names
     head_mesh = "head_u_joint_center__8__1"
     feet_mesh_names = ["RL_skateboard_bearing_left_2", "LL_skateboard_bearing_left_2"]
     head_joint_names = ["head_LeadScrew1", "head_LeadScrew2", "head_LeadScrew3",
@@ -61,21 +60,20 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     arm_joint_names = ["LH_yaw", "LH_pitch", "LH_roll", "LH_elbow_joint", "LH_wrist_roll",
                        "RH_yaw", "RH_pitch", "RH_roll", "RH_elbow_joint", "RH_wrist_roll"]
     # - robot reset
-    fall_height = 1.3  # the head is at 1.7m
-    target_swing_height = 0.02
+    fall_height = 1.4  # the head is at 1.7m
+    target_swing_height = 0.05
     # - action scale
     action_scale = 1.0
     # - reward scales
-    rew_scale_alive = 0.25
+    rew_scale_alive = 1.0
     rew_scale_terminated = -2.0
-    rew_scale_goal_dist = 10.0
-    rew_scale_height_dist = -1.0
+    rew_scale_goal_dist = 2.0
+    rew_scale_forward_velocity = 0.5
+    rew_scale_height_dist = 1.0
     rew_scale_foot_contact = 0.1
     rew_scale_air_time = 2.0
     rew_scale_gait_contact = 2.0
-    rew_scale_upright = 0.5
-    rew_scale_swing_height = -50.0
-    rew_scale_not_moving = -1.0
+    rew_scale_swing_height = -2.0
     rew_scale_contact_vel = -1.0
-    rew_scale_lin_vel_z = -0.1
-    rew_scale_ang_vel_xy = -0.1
+    rew_scale_lin_vel_z = -1.0
+    rew_scale_ang_vel_xy = -1.0

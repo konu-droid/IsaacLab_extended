@@ -40,15 +40,15 @@ class DropbearArticulationCfg(ArticulationCfg):
 # Dropbear humanoid robot configuration
 DROPBEAR_CFG = DropbearArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"C:\\Users\\USER\\Documents\\IsaacLab_extended\\robots_usd\\hyperspawn\\dropbear.usd",
+        usd_path=f"/home/konu/Documents/IsaacLab_extended/robots_usd/hyperspawn/dropbear.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             retain_accelerations=False,
             linear_damping=0.0,
             angular_damping=0.0,
-            max_linear_velocity=1000.0,
-            max_angular_velocity=1000.0,
+            max_linear_velocity=1000.0,  
+            max_angular_velocity=1000.0,  
             max_depenetration_velocity=1.0,  # Reduce depenetration velocity
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(

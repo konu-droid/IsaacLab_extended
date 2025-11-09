@@ -69,3 +69,8 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# Retarget dataset
+**/ACCAD/*
+scripts/retarget_smplx/model/smplx/*
+

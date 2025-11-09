@@ -1,0 +1,15 @@
+# Dockerfile
+
+FROM nvcr.io/nvidia/isaac-sim:5.1.0
+
+# Set the shell to bash
+SHELL ["/bin/bash", "-c"]
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && apt upgrade -y
+RUN apt install nano python3-pip -y
+RUN pip3 install torch torchvision --break-system-packages
+RUN pip3 install smplx[all] pyrender trimesh pyglet==1.* --break-system-packages
+

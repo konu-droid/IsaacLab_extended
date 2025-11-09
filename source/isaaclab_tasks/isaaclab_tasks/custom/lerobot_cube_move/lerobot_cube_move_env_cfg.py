@@ -21,10 +21,10 @@ from .isaaclab_asset.lerobot_so101 import SO101_CFG
 @configclass
 class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 3  # 500 timesteps
+    episode_length_s = 5  # 500 timesteps
     decimation = 2
     action_space = 6
-    observation_space = 22
+    observation_space = 14
     state_space = 0
     TABLE_HEIGHT = 0.78
 
@@ -99,7 +99,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
                 stabilization_threshold=0.0025,
                 max_depenetration_velocity=1000.0,
             ),
-            scale=(0.01, 0.01, 0.01),
+            scale=(0.02, 0.02, 0.02),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.3, 0.1, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -128,13 +128,10 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     dof_velocity_scale = 0.1
 
     # reward scales    
-    reach_reward_scale: float = 2.0
-    alignment_reward_scale: float = 2.0
-    approach_angle_reward_scale: float = 2.0
-    grasp_reward_scale: float = 2.0
-    contact_reward_scale = 1.0
-    lift_reward_scale: float = 0.0
-    mate_reward_scale = 0.0
-    action_penalty_scale = 0.001
+    pick_reward_scale: float = 1.0
+    place_reward_scale: float = 1.0
+    gripper_reward_scale: float = 0.5
+
+    pick_moved_reward_scale: float = -1.0
     
-    success_bonus: float = 10.0
+    action_penalty_scale: float = 0.001
