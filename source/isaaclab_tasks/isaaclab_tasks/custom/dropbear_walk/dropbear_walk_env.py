@@ -31,9 +31,11 @@ class DropbearWalkEnv(DirectRLEnv):
 
         self.head_mesh_idx, _ = self.robot.find_bodies(self.cfg.head_mesh)
         self.feet_mesh_idx, _ = self.robot.find_bodies(self.cfg.feet_mesh_names)
+        self.hand_mesh_idx, _ = self.robot.find_bodies(self.cfg.hand_mesh_names)
         self.actuated_joint_ids, _ = self.robot.find_joints(self.cfg.actuated_joint_names)
         self.head_joint_ids, _ = self.robot.find_joints(self.cfg.head_joint_names)
         self.arm_joint_ids, _ = self.robot.find_joints(self.cfg.arm_joint_names)
+        self.shoulder_joint_ids, _ = self.robot.find_joints(self.cfg.should_joint_names)
         # create auxiliary variables for computing applied action, observations and rewards
         self.robot_dof_lower_limits = self.robot.data.soft_joint_pos_limits[0, self.actuated_joint_ids, 0].to(device=self.device)
         self.robot_dof_upper_limits = self.robot.data.soft_joint_pos_limits[0, self.actuated_joint_ids, 1].to(device=self.device)
@@ -144,12 +146,12 @@ class DropbearWalkEnv(DirectRLEnv):
         root_ang_vel = self.robot.data.root_link_ang_vel_b
         head_pos = self.robot.data.body_link_pos_w[:, self.head_mesh_idx, :].squeeze()
         net_contact_F = self.contact_sensor_f.data.net_forces_w
-        first_contact = self.contact_sensor_f.compute_first_contact(self.step_dt)
-        last_air_time = self.contact_sensor_f.data.last_air_time
+        current_air_time = self.contact_sensor_f.data.current_air_time
         feet_pos = self.robot.data.body_link_pos_w[:, self.feet_mesh_idx, :]
         feet_vel = self.robot.data.body_link_lin_vel_w[:, self.feet_mesh_idx, :]
+        shoulder_ang = self.robot.data.joint_pos[:, self.shoulder_joint_ids]
 
-        period = 2.0  # seconds for a full step cycle
+        period = 1.0  # seconds for a full step cycle
         phase = (self.episode_length_buf * self.dt) % period
         self.leg_phase[:, 0] = phase < 0.5  # 0.5 is for half cycle, irrespective of period
         self.leg_phase[:, 1] = phase >= 0.5  # on leg should eb true other false
@@ -196,10 +198,11 @@ class DropbearWalkEnv(DirectRLEnv):
             root_lin_vel,
             root_ang_vel,
             net_contact_F,
-            first_contact,
-            last_air_time,
+            current_air_time,
+            shoulder_ang,
             feet_pos,
             feet_vel,
+            period,
             self.leg_phase,
             self.prev_root_pos,
             self.up_vec,
@@ -294,10 +297,11 @@ def compute_rewards(
     robot_root_lin_vel: torch.Tensor,
     robot_root_ang_vel: torch.Tensor,
     net_contact_F: torch.Tensor,
-    first_contact: torch.Tensor,
-    last_air_time: torch.Tensor,
+    current_air_time: torch.Tensor,
+    shoulder_ang: torch.Tensor,
     feet_pos: torch.Tensor,
     feet_vel: torch.Tensor,
+    period: float,
     leg_phase: torch.Tensor,
     prev_root_pos: torch.Tensor,
     up_vec: torch.Tensor,
@@ -340,23 +344,31 @@ def compute_rewards(
     # feet_contact_reward = rew_scale_foot_contact * torch.sum(contact_force_magnitudes, dim=1)  # sum can be 0, 1 or 2
 
     # -- reward for desired air time (gait reward) --
-    air_time_shaping = torch.sum(torch.abs(0.5 - last_air_time) * first_contact, dim=1)
-    rew_air_time = rew_scale_air_time * air_time_shaping
+    air_time_shaping = torch.where(current_air_time > (period/4), -current_air_time, current_air_time)  # should be 1/4 of the period (one walk cycle). 0.5
+    rew_air_time = rew_scale_air_time * torch.sum(air_time_shaping, dim=-1)
 
     # -- reward for matching a desired contact schedule based on a gait phase clock.
     contact_schedule_matches = torch.sum(~(contact_force_magnitudes ^ leg_phase), dim=1)  # sum can be 0, 1 or 2
-    rew_gait_contact = rew_scale_gait_contact * torch.where(contact_schedule_matches > 1.0, 1.0, -1.0)
+    rew_gait_contact = rew_scale_gait_contact * contact_schedule_matches - 1.0
+
+    # -- reward for lifting opposite arm to the leg on a gait phase clock. leg lifts when gait is 0.0
+    shoulder_ang_bool = shoulder_ang < 0.0
+    # this is a work around, as for right arm +ve angle means arm going backwards
+    # and for left arm it means going forward
+    shoulder_ang_bool[:, 0] = ~shoulder_ang_bool[:, 0]
+    shoulder_schedule_matches = torch.sum((shoulder_ang_bool ^ leg_phase), dim=1)  # sum can be 0, 1 or 2
+    rew_gait_shoulder = rew_scale_gait_contact * shoulder_schedule_matches - 1.0
 
     # -- reward for up right position --
     upright_z = quat_apply(robot_root_quat, up_vec)
-    rew_upright = rew_scale_upright * (upright_z[:, 2] < 0.95)
+    rew_upright = rew_scale_upright * (upright_z[:, 2] > 0.98)
 
     # -- penalize feet for being too low during the swing phase.
     swing_height_error = torch.sum(torch.abs(feet_pos[:, :, 2] - target_swing_height) * ~contact_force_magnitudes, dim=1)
     rew_swing_height = rew_scale_swing_height * swing_height_error
 
-    # -- penalize robot not moving. 1 milimeter per frame
-    movement_magnitude = 0.001 > torch.norm(robot_root_pos[:, :1] - prev_root_pos[:, :1], p=2, dim=-1)
+    # -- penalize robot not moving. 1 cm per frame
+    movement_magnitude = 0.01 > torch.norm(robot_root_pos[:, :1] - prev_root_pos[:, :1], p=2, dim=-1)
     rew_no_move = rew_scale_not_moving * movement_magnitude
 
     # -- penalize feet for having high velocity at the moment of contact.
@@ -378,6 +390,7 @@ def compute_rewards(
         # + feet_contact_reward
         + rew_air_time
         + rew_gait_contact
+        + rew_gait_shoulder
         + rew_upright
         + rew_swing_height
         + rew_no_move
@@ -395,6 +408,7 @@ def compute_rewards(
         # "reward/feet_contact_reward": feet_contact_reward.mean().item(),
         "reward/rew_air_time": rew_air_time.mean().item(),
         "reward/rew_gait_contact": rew_gait_contact.mean().item(),
+        "reward/rew_gait_shoulder": rew_gait_shoulder.mean().item(),
         "reward/rew_upright": rew_upright.mean().item(),
         "reward/rew_swing_height": rew_swing_height.mean().item(),
         "reward/rew_no_move": rew_no_move.mean().item(),
@@ -408,7 +422,6 @@ def compute_rewards(
         "state/head_height_dist": dist_to_height.mean().item(),
         "state/forward_velocity_lin": robot_root_lin_vel[:, 0].mean().item(),
         "state/forward_velocity_ang": robot_root_ang_vel[:, 0].mean().item(),
-        "state/feet_pos": feet_pos[:, 0].mean().item(),
     }
 
     return total_reward, wandb_log

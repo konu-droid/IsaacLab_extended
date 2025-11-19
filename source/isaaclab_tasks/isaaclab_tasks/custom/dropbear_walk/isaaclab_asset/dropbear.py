@@ -40,7 +40,7 @@ class DropbearArticulationCfg(ArticulationCfg):
 # Dropbear humanoid robot configuration
 DROPBEAR_CFG = DropbearArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"C:\\Users\\USER\\Documents\\IsaacLab_extended\\robots_usd\\hyperspawn\\dropbear.usd",
+        usd_path=f"robots_usd/hyperspawn/dropbear.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -59,7 +59,7 @@ DROPBEAR_CFG = DropbearArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.01),
+        pos=(0.0, 0.0, 0.005),
         joint_pos={
             # Left arm joints - neutral position for balance
             "LH_yaw": 0.0,
@@ -126,10 +126,10 @@ DROPBEAR_CFG = DropbearArticulationCfg(
         ),
     },
     joint_sdk_names=[
-        # # Left arm actuators
-        # "LH_yaw", "LH_pitch", "LH_roll", "LH_elbow_joint", "LH_wrist_roll",
-        # # Right arm actuators
-        # "RH_yaw", "RH_pitch", "RH_roll", "RH_elbow_joint", "RH_wrist_roll",
+        # Left arm actuators
+        "LH_yaw", "LH_pitch", "LH_roll", # "LH_elbow_joint", "LH_wrist_roll",
+        # Right arm actuators
+        "RH_yaw", "RH_pitch", "RH_roll", # "RH_elbow_joint", "RH_wrist_roll",
         # Pelvic girdle actuators
         "PG_left_leg_pitch", "PG_left_leg_roll", "PG_right_leg_pitch", "PG_right_leg_roll",
         # Leg actuators
