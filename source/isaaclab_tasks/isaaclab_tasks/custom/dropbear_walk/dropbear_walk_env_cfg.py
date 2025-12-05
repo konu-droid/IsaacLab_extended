@@ -21,8 +21,8 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     decimation = 2
     episode_length_s = 10.0  # s * 120 STEPS
     # - spaces definition
-    action_space = 18  # 28
-    observation_space = 41  # 61
+    action_space = 14  # 28
+    observation_space = 35  # 61
     state_space = 0
 
     # simulation
@@ -62,21 +62,25 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     arm_joint_names = ["LH_yaw", "LH_pitch", "LH_roll", "LH_elbow_joint", "LH_wrist_roll",
                        "RH_yaw", "RH_pitch", "RH_roll", "RH_elbow_joint", "RH_wrist_roll"]
     should_joint_names = ["LH_yaw", "RH_yaw"]
-    # - robot reset
+
+    # - robot parameters
     fall_height = 1.2  # the head is at 1.7m
-    target_swing_height = 0.01
+    target_swing_height = 0.05
+    feet_seperation_threshold = 0.07
     # - action scale
     action_scale = 1.0
+
     # - reward scales
     rew_scale_alive = 0.25
     rew_scale_terminated = -50.0
-    rew_scale_goal_dist = 20.0
+    rew_scale_goal_dist = 40.0
     rew_scale_height_dist = -1.0
     rew_scale_foot_contact = 0.1
     rew_scale_air_time = 2.0
     rew_scale_gait_contact = 2.0
     rew_scale_upright = 0.5
-    rew_scale_swing_height = -5.0
+    rew_scale_swing_height = -10.0
+    rew_scale_feet_near = -1.0
     rew_scale_not_moving = -1.0
     rew_scale_contact_vel = -0.2
     rew_scale_lin_vel_z = -0.1

@@ -127,9 +127,9 @@ DROPBEAR_CFG = DropbearArticulationCfg(
     },
     joint_sdk_names=[
         # Left arm actuators
-        "LH_yaw", "LH_pitch", "LH_roll", # "LH_elbow_joint", "LH_wrist_roll",
+        "LH_yaw", # "LH_pitch", "LH_roll", # "LH_elbow_joint", "LH_wrist_roll",
         # Right arm actuators
-        "RH_yaw", "RH_pitch", "RH_roll", # "RH_elbow_joint", "RH_wrist_roll",
+        "RH_yaw", # "RH_pitch", "RH_roll", # "RH_elbow_joint", "RH_wrist_roll",
         # Pelvic girdle actuators
         "PG_left_leg_pitch", "PG_left_leg_roll", "PG_right_leg_pitch", "PG_right_leg_roll",
         # Leg actuators

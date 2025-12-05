@@ -52,7 +52,8 @@ class DropbearWalkEnv(DirectRLEnv):
 
         self.leg_phase = torch.zeros((self.num_envs, len(self.feet_mesh_idx)), device=self.device, dtype=torch.bool)
         self.prev_root_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.up_vec = torch.tensor([0.0, 0.0, 1.0], device=self.device).repeat(self.num_envs, 1)
+        self.up_vec = torch.tensor([-0.2, 0.0, 1.0], device=self.device).repeat(self.num_envs, 1)
+        self.up_vec = torch.nn.functional.normalize(self.up_vec, dim=0)
 
         self.nan_detected = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
 
@@ -111,12 +112,18 @@ class DropbearWalkEnv(DirectRLEnv):
         # Calculate the distance to the goal in the xy-plane (ignoring height).
         dist_to_goal = torch.norm(goal_pos[:, :2] - robot_pos[:, :2], p=2, dim=-1).unsqueeze(dim=1)
 
+        period = 1.0  # seconds for a full step cycle
+        phase = (self.episode_length_buf * self.dt) % period
+        self.leg_phase[:, 0] = phase < 0.5  # 0.5 is for half cycle, irrespective of period
+        self.leg_phase[:, 1] = phase >= 0.5  # on leg should eb true other false
+
         obs = torch.cat(
             (
                 self.robot.data.joint_pos[:, self.actuated_joint_ids],
                 self.actions,
                 dist_to_goal,
                 robot_quat,
+                self.leg_phase,
             ),
             dim=-1,
         )
@@ -188,10 +195,12 @@ class DropbearWalkEnv(DirectRLEnv):
             self.cfg.rew_scale_gait_contact,
             self.cfg.rew_scale_upright,
             self.cfg.rew_scale_swing_height,
+            self.cfg.rew_scale_feet_near,
             self.cfg.rew_scale_contact_vel,
             self.cfg.rew_scale_lin_vel_z,
             self.cfg.rew_scale_ang_vel_xy,
             self.cfg.target_swing_height,
+            self.cfg.feet_seperation_threshold,
             head_pos,
             root_pos,
             root_quat,
@@ -286,10 +295,12 @@ def compute_rewards(
     rew_scale_gait_contact: float,
     rew_scale_upright: float,
     rew_scale_swing_height: float,
+    rew_scale_feet_near: float,
     rew_scale_contact_vel: float,
     rew_scale_lin_vel_z: float,
     rew_scale_ang_vel_xy: float,
     target_swing_height: float,
+    feet_seperation_threshold: float,
     # -- tensors
     head_pos: torch.Tensor,
     robot_root_pos: torch.Tensor,
@@ -349,15 +360,15 @@ def compute_rewards(
 
     # -- reward for matching a desired contact schedule based on a gait phase clock.
     contact_schedule_matches = torch.sum(~(contact_force_magnitudes ^ leg_phase), dim=1)  # sum can be 0, 1 or 2
-    rew_gait_contact = rew_scale_gait_contact * contact_schedule_matches - 1.0
+    rew_gait_contact = rew_scale_gait_contact * (contact_schedule_matches - 1.0)
 
     # -- reward for lifting opposite arm to the leg on a gait phase clock. leg lifts when gait is 0.0
-    shoulder_ang_bool = shoulder_ang < 0.0
+    shoulder_ang_bool = shoulder_ang > 0.0
     # this is a work around, as for right arm +ve angle means arm going backwards
     # and for left arm it means going forward
     shoulder_ang_bool[:, 0] = ~shoulder_ang_bool[:, 0]
     shoulder_schedule_matches = torch.sum((shoulder_ang_bool ^ leg_phase), dim=1)  # sum can be 0, 1 or 2
-    rew_gait_shoulder = rew_scale_gait_contact * shoulder_schedule_matches - 1.0
+    rew_gait_shoulder = rew_scale_gait_contact * (shoulder_schedule_matches - 1.0)
 
     # -- reward for up right position --
     upright_z = quat_apply(robot_root_quat, up_vec)
@@ -366,6 +377,10 @@ def compute_rewards(
     # -- penalize feet for being too low during the swing phase.
     swing_height_error = torch.sum(torch.abs(feet_pos[:, :, 2] - target_swing_height) * ~contact_force_magnitudes, dim=1)
     rew_swing_height = rew_scale_swing_height * swing_height_error
+
+    # -- Penalize if the feet get too close to each other.
+    feet_too_near = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], p=2, dim=-1) < feet_seperation_threshold
+    rew_feet_near = rew_scale_feet_near * feet_too_near
 
     # -- penalize robot not moving. 1 cm per frame
     movement_magnitude = 0.01 > torch.norm(robot_root_pos[:, :1] - prev_root_pos[:, :1], p=2, dim=-1)
@@ -393,6 +408,7 @@ def compute_rewards(
         + rew_gait_shoulder
         + rew_upright
         + rew_swing_height
+        + rew_feet_near
         + rew_no_move
         + rew_contact_vel
         + rew_lin_vel_z
@@ -411,6 +427,7 @@ def compute_rewards(
         "reward/rew_gait_shoulder": rew_gait_shoulder.mean().item(),
         "reward/rew_upright": rew_upright.mean().item(),
         "reward/rew_swing_height": rew_swing_height.mean().item(),
+        "reward/rew_feet_near": rew_feet_near.mean().item(),
         "reward/rew_no_move": rew_no_move.mean().item(),
         "reward/rew_contact_vel": rew_contact_vel.mean().item(),
         "reward/rew_lin_vel_z": rew_lin_vel_z.mean().item(),
