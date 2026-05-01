@@ -281,11 +281,11 @@ def compute_rewards(
     pick_cube_move_penality = pick_moved_reward_scale * (torch.norm(pick_cube_vel) > 0.01)
     
     total_reward = (
-        pick_approach_reward +
-        place_approach_reward +
-        gripper_open_reward + 
-        gripper_close_reward +
-        pick_cube_move_penality
+        pick_approach_reward
+        # place_approach_reward +
+        # gripper_open_reward + 
+        # gripper_close_reward +
+        # pick_cube_move_penality
     )
     
     wandb_log = {

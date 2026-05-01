@@ -52,7 +52,7 @@ class DropbearWalkEnv(DirectRLEnv):
 
         self.leg_phase = torch.zeros((self.num_envs, len(self.feet_mesh_idx)), device=self.device, dtype=torch.bool)
         self.prev_root_pos = torch.zeros((self.num_envs, 3), device=self.device)
-        self.up_vec = torch.tensor([-0.2, 0.0, 1.0], device=self.device).repeat(self.num_envs, 1)
+        self.up_vec = torch.tensor([-0.5, 0.0, 1.0], device=self.device).repeat(self.num_envs, 1)
         self.up_vec = torch.nn.functional.normalize(self.up_vec, dim=0)
 
         self.nan_detected = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
@@ -352,7 +352,7 @@ def compute_rewards(
 
     # -- reward for keeping the feet on the ground --
     contact_force_magnitudes = torch.norm(net_contact_F, dim=-1) > 1.0
-    # feet_contact_reward = rew_scale_foot_contact * torch.sum(contact_force_magnitudes, dim=1)  # sum can be 0, 1 or 2
+    feet_contact_reward = rew_scale_foot_contact * torch.sum(contact_force_magnitudes, dim=1)  # sum can be 0, 1 or 2
 
     # -- reward for desired air time (gait reward) --
     air_time_shaping = torch.where(current_air_time > (period/4), -current_air_time, current_air_time)  # should be 1/4 of the period (one walk cycle). 0.5
@@ -398,40 +398,39 @@ def compute_rewards(
 
     # -- total reward --
     total_reward = (
-        rew_alive
-        + rew_termination
-        + reward_goal
-        + reward_height
+        # rew_alive
+        # + rew_termination
+        reward_goal
+        # + reward_height
         # + feet_contact_reward
-        + rew_air_time
+        # + rew_air_time
         + rew_gait_contact
         + rew_gait_shoulder
         + rew_upright
-        + rew_swing_height
+        # + rew_swing_height
         + rew_feet_near
-        + rew_no_move
-        + rew_contact_vel
-        + rew_lin_vel_z
-        + rew_ang_vel_xy
-    )
+        # + rew_no_move
+        # + rew_contact_vel
+        # + rew_lin_vel_z
+        # + rew_ang_vel_xy
 
     wandb_log = {
         # Original logs
-        "reward/rew_alive": rew_alive.mean().item(),
-        "reward/rew_termination": rew_termination.mean().item(),
+        # "reward/rew_alive": rew_alive.mean().item(),
+        # "reward/rew_termination": rew_termination.mean().item(),
         "reward/reward_goal": reward_goal.mean().item(),
-        "reward/reward_height": reward_height.mean().item(),
+        # "reward/reward_height": reward_height.mean().item(),
         # "reward/feet_contact_reward": feet_contact_reward.mean().item(),
-        "reward/rew_air_time": rew_air_time.mean().item(),
+        # "reward/rew_air_time": rew_air_time.mean().item(),
         "reward/rew_gait_contact": rew_gait_contact.mean().item(),
         "reward/rew_gait_shoulder": rew_gait_shoulder.mean().item(),
         "reward/rew_upright": rew_upright.mean().item(),
-        "reward/rew_swing_height": rew_swing_height.mean().item(),
+        # "reward/rew_swing_height": rew_swing_height.mean().item(),
         "reward/rew_feet_near": rew_feet_near.mean().item(),
-        "reward/rew_no_move": rew_no_move.mean().item(),
-        "reward/rew_contact_vel": rew_contact_vel.mean().item(),
-        "reward/rew_lin_vel_z": rew_lin_vel_z.mean().item(),
-        "reward/rew_ang_vel_xy": rew_ang_vel_xy.mean().item(),
+        # "reward/rew_no_move": rew_no_move.mean().item(),
+        # "reward/rew_contact_vel": rew_contact_vel.mean().item(),
+        # "reward/rew_lin_vel_z": rew_lin_vel_z.mean().item(),
+        # "reward/rew_ang_vel_xy": rew_ang_vel_xy.mean().item(),
         # Total
         "reward/total_reward": total_reward.mean().item(),
         # State logs
