@@ -15,7 +15,7 @@ from isaaclab.assets.articulation import ArticulationCfg
 
 SO101_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"/home/konu/Documents/IsaacLab_extended/robots_usd/lerobot/so101/so101.usd",
+        usd_path=f"robots_usd/lerobot/so101/so101.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(env)",
+      "Skill(update-config)"
+    ],
+    "deny": [
+        "Bash(sudo:*)",
+        "Bash(docker:*)",
+        "Bash(rm -rf:*)",
+        "Read(./.env)",
+        "Read(~/.ssh/**)"
+      ],
+      "ask": [
+        "Bash(git push:*)"
+      ]
+  },
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Source control: github.example.com/acme-corp and all repos under it",
+      "Trusted cloud buckets: s3://acme-build-artifacts, gs://acme-ml-datasets",
+      "Trusted internal domains: *.corp.example.com, api.internal.example.com",
+      "Key internal services: Jenkins at ci.example.com, Artifactory at artifacts.example.com"
+    ]
+  }
+}

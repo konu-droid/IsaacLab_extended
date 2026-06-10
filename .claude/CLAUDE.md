@@ -1,0 +1,140 @@
+# Claude Code Guidelines
+
+## Core Principles
+
+- **Minimal changes** — only edit files directly relevant to the task. Do not refactor, reformat, or touch unrelated code.
+- **Modular design** — keep functions/classes small and single-purpose. One responsibility per unit.
+- **Well-documented** — every function, class, and non-obvious block must have clear documentation.
+- **Readable over clever** — prefer clarity. Avoid unnecessary abstractions or one-liners that obscure intent.
+
+---
+
+## File Editing Rules
+
+- Only modify files that are **directly required** to complete the task.
+- Do **not** reformat, re-order, or clean up code in files you're not explicitly changing.
+- Do **not** rename variables, fix unrelated lints, or refactor while implementing a feature.
+- If a bug or issue is spotted in unrelated code, **note it in a comment** — don't fix it silently.
+
+---
+
+## Documentation Standards
+
+### Functions & Methods
+Every function must have a docstring/JSDoc/comment block that describes:
+- **What** it does (one sentence)
+- **Parameters** — name, type, and purpose
+- **Return value** — type and meaning
+- **Throws/Errors** — if applicable
+
+**Python example:**
+```python
+def calculate_discount(price: float, rate: float) -> float:
+    """
+    Apply a percentage discount to a price.
+
+    Args:
+        price: The original price in GBP.
+        rate:  Discount rate as a decimal (e.g. 0.2 for 20%).
+
+    Returns:
+        The discounted price, rounded to 2 decimal places.
+
+    Raises:
+        ValueError: If rate is not between 0 and 1.
+    """
+```
+
+**C++ example:**
+```cpp
+/**
+ * @brief Applies a percentage discount to a price.
+ *
+ * @param price The original price in GBP.
+ * @param rate Discount rate as a decimal (e.g., 0.2 for 20%).
+ * @return double The discounted price, rounded to 2 decimal places.
+ * @throw std::invalid_argument If the rate is not between 0.0 and 1.0.
+ */
+ ```
+**Rust example:**
+```rust
+/// Applies a percentage discount to a price.
+///
+/// # Arguments
+///
+/// * `price` - The original price in GBP.
+/// * `rate` - Discount rate as a decimal (e.g., 0.2 for 20%).
+///
+/// # Returns
+///
+/// The discounted price, rounded to 2 decimal places.
+///
+/// # Errors
+///
+/// Returns a `DiscountError::InvalidRate` if the `rate` is not between 0.0 and 1.0.
+///
+/// # Examples
+///
+/// ```
+/// let discounted = apply_discount(100.0, 0.2).unwrap();
+/// assert_eq!(discounted, 80.00);
+/// ```
+```
+
+
+### Classes & Modules
+- Add a top-of-file or class-level comment explaining the **purpose** and **scope** of the module.
+- Document public interfaces; private helpers need at minimum a one-line comment.
+
+### Inline Comments
+- Comment **why**, not **what** — the code shows what; the comment explains intent.
+- Use inline comments for non-obvious logic, edge-case handling, and deliberate workarounds.
+
+```python
+# Offset by 1 because the API returns 0-indexed pages but the UI is 1-indexed
+page_number = response["page"] + 1
+```
+
+---
+
+## Modularity Rules
+
+- Functions should do **one thing**. If a function needs an "and" to describe it, split it.
+- Keep functions **short** — aim for under 40 lines. Longer is a signal to decompose.
+- Group related logic into dedicated modules/files — avoid monolithic files.
+- Shared utilities go in a common location (e.g. `utils/`, `helpers/`, `lib/`) — don't duplicate logic.
+- Avoid deep nesting; extract nested blocks into named helper functions.
+
+---
+
+## Naming Conventions
+
+- Names should be **self-descriptive** — a reader should know what a variable/function does without reading its body.
+- Booleans: prefix with `is_`, `has_`, `can_`, `should_` (e.g. `is_authenticated`).
+- Functions: use verbs (`fetch_user`, `calculate_total`, `parse_config`).
+- Avoid abbreviations unless they are universally understood (`url`, `id`, `html` are fine; `u`, `tmp2`, `fn3` are not).
+
+---
+
+## Code Style
+
+- Follow the existing style of the file you are editing — don't impose a different style.
+- If no style is established, default to the language's standard (PEP 8, StandardJS, etc.).
+- Consistent indentation, spacing, and line length within each file.
+
+---
+
+## Testing
+
+- When adding a function, add or update corresponding tests if a test file already exists.
+- Do **not** create a test file if none exists — unless the task explicitly asks for it.
+- Tests should cover: the happy path, edge cases, and expected error conditions.
+
+---
+
+## Commit / Change Scope
+
+When finishing a task, briefly summarise:
+1. Which files were changed and why.
+2. Any assumptions made.
+3. Any related issues spotted (but not changed).

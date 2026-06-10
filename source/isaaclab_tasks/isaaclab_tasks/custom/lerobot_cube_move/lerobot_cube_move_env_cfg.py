@@ -6,7 +6,7 @@
 
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.sensors import ContactSensorCfg
-from isaaclab.envs import DirectRLEnvCfg
+from isaaclab.envs import DirectRLEnvCfg, ViewerCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
@@ -21,10 +21,11 @@ from .isaaclab_asset.lerobot_so101 import SO101_CFG
 @configclass
 class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 5  # 500 timesteps
+    viewer: ViewerCfg = ViewerCfg(env_index=0, eye=(1.2, 0.8, 1.4), lookat=(0.1, 0.0, 0.8), origin_type="env")
+    episode_length_s = 8  # 800 timesteps
     decimation = 2
     action_space = 6
-    observation_space = 14
+    observation_space = 20
     state_space = 0
     TABLE_HEIGHT = 0.78
 
@@ -75,7 +76,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     table_cfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/table",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"/home/konu/Documents/IsaacLab_extended/robots_usd/lerobot/additional_assets/thor_table.usd",
+            usd_path=f"robots_usd/lerobot/additional_assets/thor_table.usd",
             scale=(1.0, 1.0, 1.0), # Scale the table to be slightly longer
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True, # The table is a static, non-movable object
@@ -88,7 +89,7 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     pick_cube_cfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/pick_cube",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/konu/Documents/IsaacLab_extended/robots_usd/lerobot/additional_assets/cube.usd",
+            usd_path="robots_usd/lerobot/additional_assets/cube.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -107,20 +108,18 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     target_cube_cfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/target_cube",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/konu/Documents/IsaacLab_extended/robots_usd/lerobot/additional_assets/cube.usd",
+            usd_path="robots_usd/lerobot/additional_assets/cube.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                kinematic_enabled=False,
-                disable_gravity=False,
-                enable_gyroscopic_forces=True,
-                solver_position_iteration_count=8,
-                solver_velocity_iteration_count=0,
-                sleep_threshold=0.005,
-                stabilization_threshold=0.0025,
-                max_depenetration_velocity=1000.0,
+                kinematic_enabled=True,
+                disable_gravity=True,
+                enable_gyroscopic_forces=False,
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(
+                collision_enabled=False
             ),
             scale=(0.01, 0.01, 0.01),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.2, 0.01, 0.1 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.2, 0.01, 0.01 + TABLE_HEIGHT), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
     # custom parameters/scales
@@ -128,10 +127,11 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     dof_velocity_scale = 0.1
 
     # reward scales    
-    pick_reward_scale: float = 1.0
-    place_reward_scale: float = 1.0
-    gripper_reward_scale: float = 0.5
+    pick_reward_scale: float = 2.0
+    place_reward_scale: float = 20.0
+    lift_reward_scale: float = 5.0
+    gripper_reward_scale: float = 1.0
 
-    pick_moved_reward_scale: float = -1.0
+    pick_moved_reward_scale: float = -0.5
     
     action_penalty_scale: float = 0.001

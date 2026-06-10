@@ -13,6 +13,7 @@
 **/*.usda
 **/*.usdc
 **/*.usdz
+**/*.mp4
 
 # Python
 .DS_Store

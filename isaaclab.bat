@@ -73,12 +73,12 @@ rem -----------------------------------------------------------------------
     call :extract_python_exe
 
     rem 1) try to locate the VERSION file via the kit install
-    for /f "delims=" %%V in ('!python_exe! -c "import isaacsim,os;print(os.path.abspath(os.path.join(os.path.dirname(isaacsim.__file__), os.pardir, os.pardir, 'VERSION')))"') do set "VERSION_PATH=%%V"
+    for /f "delims=" %%V in ('!python_exe! -c "import isaacsim,os;print(os.path.abspath(os.path.join(os.path.dirname(isaacsim.__file__), os.pardir, os.pardir, 'VERSION'^)^)^)"') do set "VERSION_PATH=%%V"
     if exist "!VERSION_PATH!" (
         for /f "usebackq delims=" %%L in ("!VERSION_PATH!") do set "ISAACSIM_VER=%%L"
     ) else (
         rem 2) fallback to importlib.metadata if no VERSION file
-        for /f "delims=" %%L in ('!python_exe! -c "from importlib.metadata import version;print(version(''isaacsim''))"') do set "ISAACSIM_VER=%%L"
+        for /f "delims=" %%L in ('!python_exe! -c "from importlib.metadata import version;print(version(''isaacsim''^)^)"') do set "ISAACSIM_VER=%%L"
     )
 
     rem Clean up the version string (remove any trailing whitespace or newlines)
@@ -186,9 +186,9 @@ if %errorlevel% equ 0 (
 ) else (
     echo [INFO] Creating conda environment named '%env_name%'...
     echo [INFO] Installing dependencies from %ISAACLAB_PATH%\environment.yml
-    rem ————————————————————————————————
+    rem --------------------------------
     rem patch Python version if needed, but back up first
-    rem ————————————————————————————————
+    rem --------------------------------
     copy "%ISAACLAB_PATH%environment.yml" "%ISAACLAB_PATH%environment.yml.bak" >nul
     call :is_isaacsim_version_4_5
     if !ERRORLEVEL! EQU 0 (
