@@ -126,12 +126,22 @@ class LerobotCubeMoveEnvCfg(DirectRLEnvCfg):
     action_scale = 1.0
     dof_velocity_scale = 0.1
 
-    # reward scales    
+    # reward scales
+    # gripper-to-cube reaching shaping
     pick_reward_scale: float = 2.0
-    place_reward_scale: float = 20.0
+    # coarse cube-to-target shaping while carrying (or once placed)
+    place_reward_scale: float = 16.0
+    # sharp near-target shaping for the final few centimetres
+    place_fine_reward_scale: float = 8.0
+    # carry-height shaping; fades out near the target so descending is free
     lift_reward_scale: float = 5.0
+    # gripper open/close/contact shaping
     gripper_reward_scale: float = 1.0
+    # persistent bonus while the cube is within tolerance of the target
+    success_reward_scale: float = 10.0
+    # bonus for opening the gripper while the cube is at the target (release)
+    release_reward_scale: float = 5.0
 
     pick_moved_reward_scale: float = -0.5
-    
+
     action_penalty_scale: float = 0.001
