@@ -21,3 +21,13 @@ gym.register(
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
     },
 )
+
+gym.register(
+    id="Isaac-Lerobot-IK-PnP-Direct-v0",
+    entry_point=f"{__name__}.lerobot_IK_pnp:LerobotIKPnPEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.lerobot_IK_pnp_cfg:LerobotIKPnPEnvCfg",
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_ik_pnp_cfg.yaml",
+    },
+)
