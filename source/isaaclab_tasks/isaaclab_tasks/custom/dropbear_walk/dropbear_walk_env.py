@@ -67,6 +67,11 @@ class DropbearWalkEnv(DirectRLEnv):
         # per-env goal position in world coordinates (filled on reset)
         self.goal_pos_w = torch.zeros((self.num_envs, 3), device=self.device)
 
+        # per-env commanded walking direction in world coordinates (unit vector, planar).
+        # This is the "direction vector" the policy is conditioned on; it is re-sampled on
+        # every reset so the goal can lie in any direction relative to the spawn.
+        self.command_dir_w = torch.zeros((self.num_envs, 3), device=self.device)
+
         # alternating contact schedule target: column 0 -> first foot, 1 -> second foot
         self.contact_target = torch.zeros((self.num_envs, len(self.feet_mesh_idx)), device=self.device, dtype=torch.bool)
 
@@ -168,9 +173,28 @@ class DropbearWalkEnv(DirectRLEnv):
         goal_dir_b_xy = goal_dir_b_xy / (torch.norm(goal_dir_b_xy, p=2, dim=-1, keepdim=True) + 1e-6)
         return goal_dir_b_xy, goal_dist
 
+    def _command_direction_base(self) -> torch.Tensor:
+        """Express the commanded walking direction (the direction vector) in the base frame.
+
+        Unlike :meth:`_goal_direction_base`, this uses the world-fixed command sampled at
+        reset, so it stays a well-defined unit vector even when the robot is standing on the
+        goal. Rotating it into the base frame makes it an egocentric command: as the robot
+        turns, the vector tells it where the commanded direction now lies relative to itself.
+
+        Returns:
+            A tensor of shape (num_envs, 2): the unit command direction in the base frame
+            (xy only).
+        """
+        root_quat = self.robot.data.root_link_quat_w
+        command_dir_b = quat_apply_inverse(root_quat, self.command_dir_w)
+        command_dir_b_xy = command_dir_b[:, :2]
+        command_dir_b_xy = command_dir_b_xy / (torch.norm(command_dir_b_xy, p=2, dim=-1, keepdim=True) + 1e-6)
+        return command_dir_b_xy
+
     def _get_observations(self) -> dict:
         """Assemble the proprioceptive + goal observation vector."""
         goal_dir_b_xy, goal_dist = self._goal_direction_base()
+        command_dir_b_xy = self._command_direction_base()
         phase = self._compute_phase()
 
         joint_pos_rel = self.robot.data.joint_pos[:, self.actuated_joint_ids] - self.default_dof_pos
@@ -181,7 +205,8 @@ class DropbearWalkEnv(DirectRLEnv):
                 self.robot.data.root_link_lin_vel_b,            # (3)
                 self.robot.data.root_link_ang_vel_b,            # (3)
                 self.robot.data.projected_gravity_b,            # (3)
-                goal_dir_b_xy,                                  # (2)
+                goal_dir_b_xy,                                  # (2) bearing to goal point
+                command_dir_b_xy,                               # (2) commanded direction vector
                 torch.clamp(goal_dist, max=self.cfg.goal_distance),  # (1)
                 joint_pos_rel,                                  # (14)
                 joint_vel,                                      # (14)
@@ -236,6 +261,11 @@ class DropbearWalkEnv(DirectRLEnv):
         goal_dist = torch.norm(goal_vec_w[:, :2], p=2, dim=-1)
         goal_dir_w = goal_vec_w[:, :2] / (goal_dist.unsqueeze(-1) + 1e-6)
         vel_to_goal = torch.sum(root_lin_vel_w[:, :2] * goal_dir_w, dim=-1)
+
+        # diagnostic: speed projected onto the (world-fixed) commanded direction. Unlike
+        # vel_to_goal this is unaffected by lateral drift, so it directly answers "is the
+        # robot moving along the direction it was told to?" Logged but not used in the reward.
+        command_align = torch.sum(root_lin_vel_w[:, :2] * self.command_dir_w[:, :2], dim=-1)
 
         # base forward axis projected onto the goal direction (heading alignment)
         forward_w = quat_apply(root_quat, torch.tensor([1.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1))
@@ -296,6 +326,7 @@ class DropbearWalkEnv(DirectRLEnv):
             self.reset_terminated,
         )
 
+        log["state/command_align"] = command_align.mean().item()
         wandb.log(log, step=self.common_step_counter)
         return total_reward
 
@@ -319,13 +350,28 @@ class DropbearWalkEnv(DirectRLEnv):
     #                             reset                                 #
     # ------------------------------------------------------------------ #
     def _resample_goals(self, env_ids: Sequence[int] | torch.Tensor) -> None:
-        """Place each env's goal a fixed distance straight ahead of its spawn origin.
+        """Sample a random walking direction per env and place its goal along that direction.
+
+        The commanded heading is drawn uniformly in ``[-command_angle_range, +command_angle_range]``
+        about the spawn's +x axis, and the goal is placed ``goal_distance`` away along it. The
+        unit command direction is cached in ``command_dir_w`` so it can be fed to the policy as
+        the "direction vector" observation. Re-sampling here (called on every reset) is what
+        teaches the policy to walk toward goals in arbitrary directions.
 
         Args:
-            env_ids: Indices of the environments whose goals should be (re)placed.
+            env_ids: Indices of the environments whose goals/commands should be (re)placed.
         """
-        offset = torch.tensor([self.cfg.goal_distance, 0.0, 0.0], device=self.device)
-        self.goal_pos_w[env_ids] = self.scene.env_origins[env_ids] + offset
+        origins = self.scene.env_origins[env_ids]
+        num = origins.shape[0]
+
+        # random heading per env, then build a planar unit direction vector
+        angles = (torch.rand(num, device=self.device) * 2.0 - 1.0) * self.cfg.command_angle_range
+        dir_w = torch.stack(
+            (torch.cos(angles), torch.sin(angles), torch.zeros_like(angles)), dim=-1
+        )
+
+        self.command_dir_w[env_ids] = dir_w
+        self.goal_pos_w[env_ids] = origins + self.cfg.goal_distance * dir_w
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         """Reset the selected environments to the default pose and re-place their goals."""

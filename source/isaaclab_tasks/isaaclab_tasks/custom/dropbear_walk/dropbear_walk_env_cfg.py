@@ -20,6 +20,8 @@ The reward *scales* below are the primary knobs that get tuned from the wandb fe
 during short validation runs.
 """
 
+import math
+
 from isaaclab.assets import ArticulationCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -43,11 +45,17 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     #   action_space  = 14 actuated joints (residual targets around the nominal pose)
     #   observation_space breakdown:
     #     base_lin_vel(3) + base_ang_vel(3) + projected_gravity(3)
-    #     + goal_dir_b_xy(2) + goal_dist(1)
+    #     + goal_dir_b_xy(2) + command_dir_b_xy(2) + goal_dist(1)
     #     + joint_pos_rel(14) + joint_vel(14) + last_action(14)
-    #     + gait_phase sin/cos(2)  = 56
+    #     + gait_phase sin/cos(2)  = 58
+    #
+    #   ``command_dir_b_xy`` is the world-fixed commanded walking direction (the
+    #   "direction vector") expressed in the robot's base frame. It is re-sampled at every
+    #   reset so the policy learns to walk toward a goal placed in *any* direction, not just
+    #   straight ahead. ``goal_dir_b_xy`` is the instantaneous bearing to the goal point used
+    #   for fine homing; the command stays well-defined even as the goal distance shrinks.
     action_space = 14
-    observation_space = 56
+    observation_space = 58
     state_space = 0
 
     # -- simulation --
@@ -91,9 +99,13 @@ class DropbearWalkEnvCfg(DirectRLEnvCfg):
     # ------------------------------------------------------------------ #
     #                       task / robot parameters                      #
     # ------------------------------------------------------------------ #
-    # - goal: a point placed straight ahead of each robot's spawn (+x).
-    goal_distance = 5.0  # m ahead of the spawn
+    # - goal: a point placed ``goal_distance`` from the spawn along a randomly sampled
+    #   direction (re-sampled every reset). ``command_angle_range`` bounds the heading
+    #   relative to +x; the default ``pi`` allows the goal to appear in any direction
+    #   (full 360 deg), so the policy must reorient and then walk toward it.
+    goal_distance = 2.0  # m from the spawn, along the commanded direction
     goal_reached_threshold = 0.5  # m, distance at which the goal-bonus fires
+    command_angle_range = math.pi  # rad, goal heading sampled uniformly in [-range, range]
 
     # - locomotion targets
     target_speed = 0.6  # m/s desired forward speed toward the goal

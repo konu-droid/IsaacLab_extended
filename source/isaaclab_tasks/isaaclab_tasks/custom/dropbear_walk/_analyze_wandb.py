@@ -19,7 +19,7 @@ WANT_UP = {
     "reward/total", "reward/progress", "reward/heading", "reward/gait", "reward/air_time",
     "reward/foot_clearance", "reward/arm_swing", "reward/upright", "reward/head_height",
     "reward/goal_bonus", "reward/alive", "state/vel_to_goal", "state/head_z",
-    "state/contact_matches",
+    "state/contact_matches", "state/command_align",
 }
 # metrics where "down" is desired
 WANT_DOWN = {"state/goal_dist", "state/terminated_frac"}
@@ -81,6 +81,7 @@ def main():
         print(f"  {metric}: {e:.3f} -> {l:.3f} ({direction}) {'[good]' if good else '[watch]'}")
     verdict("reward/total", True)
     verdict("state/vel_to_goal", True)
+    verdict("state/command_align", True)  # speed along the commanded direction vector
     verdict("state/terminated_frac", False)
     verdict("state/goal_dist", False)
     verdict("reward/upright", True)
