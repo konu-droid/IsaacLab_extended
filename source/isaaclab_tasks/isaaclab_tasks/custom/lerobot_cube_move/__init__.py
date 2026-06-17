@@ -31,3 +31,13 @@ gym.register(
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_ik_pnp_cfg.yaml",
     },
 )
+
+gym.register(
+    id="Isaac-Lerobot-Cube-ToF-Direct-v0",
+    entry_point=f"{__name__}.lerobot_cube_tof_env:LerobotCubeToFEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.lerobot_cube_tof_env_cfg:LerobotCubeToFEnvCfg",
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_tof_cfg.yaml",
+    },
+)
