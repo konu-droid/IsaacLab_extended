@@ -57,7 +57,8 @@ class LerobotCubeToFEnvCfg(DirectRLEnvCfg):
     tof_min_range = 0.025
     # Observation: 6 dof + pick_pos(3) + place_pos(3) + cube_to_target(3)
     #            + gripper(1) + tof grid (tof_zones**2)
-    observation_space = 16 + tof_zones * tof_zones
+    #            + 3 derived ToF features (centre dist, centroid offset, detect flag)
+    observation_space = 16 + tof_zones * tof_zones + 3
 
     # ----------------------------------------------------------- simulation --
     sim: SimulationCfg = SimulationCfg(

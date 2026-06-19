@@ -14,12 +14,15 @@ emulated with an RTX :class:`TiledCamera` whose depth image is min-pooled into a
 
 Differences from the base task:
   * The observation drops ``pick_pos_local`` and the ``picked`` heuristic flag.
-  * The 64 ToF zone distances are appended to the observation.
+  * The 64 ToF zone distances plus 3 derived ToF features (central distance,
+    detection-centroid offset, detect flag) are appended to the observation.
   * New ToF-driven reward terms encourage the policy to centre the cube in the
     sensor field of view and close the gripper once the cube is in grasp range,
     which naturally aligns the fixed jaw for a proper grip. The grasp/lift/place
-    machinery is gated on a contact-based ``is_grasped`` signal instead of the
-    removed ``picked`` flag.
+    machinery is gated on a reward-side geometric ``is_grasped`` signal (cube
+    close + gripper closed) instead of the removed ``picked`` flag, and a dense
+    open/close gripper term keeps the jaws open on empty air to avoid the fingers
+    closing through each other.
 """
 
 from __future__ import annotations
@@ -232,6 +235,16 @@ class LerobotCubeToFEnv(DirectRLEnv):
         self.tof_grid = self._read_tof_grid()
         tof_obs = (self.tof_grid / self.tof_max_range).reshape(self.num_envs, -1)  # (N, Z*Z) in [0, 1]
 
+        # Derived ToF grasp features. Computed here (before the reward) and cached so
+        # both the observation and the reward use the same readings. Exposing these
+        # summarised scalars alongside the raw grid gives the MLP a direct "is the
+        # cube centred and in range?" signal, which it needs to learn to align and
+        # close the jaw on the cube rather than just hover in front of it.
+        self.tof_center_dist, self.tof_centroid_offset, self.tof_detect = self._compute_tof_features(self.tof_grid)
+        tof_features = torch.cat(
+            (self.tof_center_dist / self.tof_max_range, self.tof_centroid_offset, self.tof_detect), dim=-1
+        )  # (N, 3)
+
         # vector from cube to target
         cube_to_target = self.place_pos - self.pick_pos
 
@@ -243,6 +256,7 @@ class LerobotCubeToFEnv(DirectRLEnv):
                 cube_to_target,
                 self.normalized_gripper_dist,
                 tof_obs,
+                tof_features,
             ),
             dim=-1,
         )
@@ -255,16 +269,30 @@ class LerobotCubeToFEnv(DirectRLEnv):
 
         pick_cube_vel = self.pick_cube.data.root_com_lin_vel_w.squeeze(1)  # (N, 3)
 
-        # ToF-derived grasp features
-        tof_center_dist, tof_centroid_offset, tof_detect = self._compute_tof_features(self.tof_grid)
+        # ToF-derived grasp features (cached from `_get_observations`, same readings)
+        tof_center_dist, tof_centroid_offset, tof_detect = (
+            self.tof_center_dist,
+            self.tof_centroid_offset,
+            self.tof_detect,
+        )
 
-        # Latch "was lifted" once the cube is held (contact) more than 3 cm above the table.
+        # Per-finger contact magnitudes, normalised to [0, 1] and combined so both
+        # fingers must touch the cube for a non-trivial contact value.
         left_contact = torch.clamp(left_finger_force, max=5.0) / 5.0
         right_contact = torch.clamp(right_finger_force, max=5.0) / 5.0
         contact_val = left_contact * right_contact
         pick_dist = torch.norm(self.pick_pos - self.robot_grasp_pos, p=2, dim=-1, keepdim=True)
-        # contact-based grasp: both fingers touching the cube while close to the grasp frame
-        is_grasped = ((pick_dist < 0.06) & (contact_val > 0.02)).float()
+
+        # Geometric grasp signal (mirrors the validated base task): the cube counts as
+        # grasped the instant the jaw is close to it AND the gripper is closed past 20%.
+        # This is reward-side only (not part of the observation), so it does not violate
+        # the removal of the `picked` observation. It is deliberately NOT contact-gated:
+        # requiring real bilateral contact force makes the whole lift/place/success chain
+        # unreachable until a near-perfect grip is already learned, which left the policy
+        # stuck hovering in front of the cube. The downstream lift/place rewards still
+        # require the cube to physically rise/move, so a "closed but empty" jaw earns
+        # nothing -- only the availability of those rewards is unlocked here.
+        is_grasped = ((pick_dist < 0.05) & (self.normalized_gripper_dist > 0.2)).float()
         # ToF shaping only applies when the cube is genuinely near the gripper, so the
         # alignment reward cannot be farmed off the flat table with no cube present.
         cube_near = (pick_dist < self.cfg.tof_cube_near_dist).float()
@@ -409,10 +437,12 @@ def compute_rewards(
             cube is centred and in range) -> 4. Lift & carry -> 5. Descend at target
             -> 6. Release.
 
-    Relative to the base task, the ``picked`` heuristic is replaced by a contact-based
-    ``is_grasped`` signal, and three ToF terms (align, range, grasp) reward the policy
-    for using the sensor to centre the cube in the field of view and close the gripper
-    only when the cube is squarely in grasp range.
+    Relative to the base task, the ``picked`` observation flag is dropped and replaced
+    by a reward-side geometric ``is_grasped`` signal (cube close + gripper closed), and
+    ToF terms (approach/align and grasp) reward the policy for using the sensor to
+    centre the cube in the field of view and close the gripper when it is in range. A
+    dense open/close gripper term keeps the jaws open on empty air (no interpenetration)
+    and rewards closing only once the cube is within grasp distance.
 
     Args:
         pick_reward_scale:       Scale for the coarse gripper-to-cube reaching reward.
@@ -465,11 +495,20 @@ def compute_rewards(
     tof_ready = cube_near * (tof_center_dist < tof_grasp_dist).float()
     tof_grasp_reward = tof_grasp_reward_scale * tof_ready * normalized_gripper_dist
 
-    # 4. Contact shaping once actually grasped
+    # 4. Gripper open/close shaping (dense). This is the key bootstrap that teaches
+    # the policy to grasp and -- just as importantly -- keeps the jaws OPEN whenever
+    # there is nothing to grasp, so the two fingers do not close through each other on
+    # empty air (the reported interpenetration). Far from the cube reward opening;
+    # near the cube reward closing; once grasped reward firm bilateral contact.
+    gripper_reward = torch.where(
+        pick_dist < 0.05,
+        gripper_reward_scale * normalized_gripper_dist,  # reward closing when near
+        gripper_reward_scale * (1.0 - normalized_gripper_dist),  # reward opening when far
+    )
     gripper_reward = torch.where(
         is_grasped > 0.5,
         gripper_reward_scale * contact_val,
-        torch.zeros_like(contact_val),
+        gripper_reward,
     )
 
     # Once delivered (lifted there, now at target) stop rewarding closing/contact so the
